@@ -238,7 +238,7 @@ namespace SmartCL
         /// <typeparam name="T5">Type of the sixth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4>, T0, T1, T2, T3, T4, T5> CreateKernel<T0, T1, T2, T3, T4, T5>
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5>, T0, T1, T2, T3, T4, T5> CreateKernel<T0, T1, T2, T3, T4, T5>
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,
@@ -286,7 +286,7 @@ namespace SmartCL
         /// <typeparam name="T6">Type of the seventh parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4>, T0, T1, T2, T3, T4, T5, T6> CreateKernel<T0, T1, T2, T3, T4, T5, T6>
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6>, T0, T1, T2, T3, T4, T5, T6> CreateKernel<T0, T1, T2, T3, T4, T5, T6>
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,
@@ -339,7 +339,7 @@ namespace SmartCL
         /// <typeparam name="T7">Type of the eighth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4>, T0, T1, T2, T3, T4, T5, T6, T7> CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7>
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7>, T0, T1, T2, T3, T4, T5, T6, T7> CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7>
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,
@@ -396,7 +396,8 @@ namespace SmartCL
         /// <typeparam name="T8">Type of the nineth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4>, T0, T1, T2, T3, T4, T5, T6, T7, T8> CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7, T8>, T0, T1, T2, T3, T4, T5, T6, T7, T8>
+            CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7, T8>
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,
@@ -457,7 +458,8 @@ namespace SmartCL
         /// <typeparam name="T9">Type of the tenth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4>, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> 
+            CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,

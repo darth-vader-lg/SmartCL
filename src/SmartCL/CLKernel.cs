@@ -190,11 +190,13 @@ namespace SmartCL
             for (var i = (uint)0; i < args.Length; i++) {
                 if (buffers[i].id != 0) {
                     var bufferId = buffers[i].id;
-                    cl.Api.SetKernelArg(id, i, (nuint)sizeof(void*), &bufferId);
+                    result = cl.Api.SetKernelArg(id, i, (nuint)sizeof(void*), &bufferId);
+                    CL.CheckResult(result, $"Cannot set kernel arg {i}");
                 }
                 else {
                     using var value = args[i].Value.Pin();
-                    cl.Api.SetKernelArg(id, i, buffers[i].size, value.ToPointer());
+                    result = cl.Api.SetKernelArg(id, i, buffers[i].size, value.ToPointer());
+                    CL.CheckResult(result, $"Cannot set kernel arg {i}");
                 }
             }
             {
@@ -351,7 +353,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2) => SetArgsAndInvoke(a0!, a1!, a2!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2) => SetArgsAndInvoke(a0!, a1!, a2!);
         #endregion
     }
 
@@ -384,7 +386,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3) => SetArgsAndInvoke(a0!, a1!, a2!, a3!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3) => SetArgsAndInvoke(a0!, a1!, a2!, a3!);
         #endregion
     }
 
@@ -418,7 +420,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!);
         #endregion
     }
 
@@ -453,7 +455,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4, T1 a5) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!);
         #endregion
     }
 
@@ -489,7 +491,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4, T1 a5, T1 a6) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!);
         #endregion
     }
 
@@ -526,7 +528,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4, T1 a5, T1 a6, T1 a7) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!);
         #endregion
     }
 
@@ -564,7 +566,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4, T1 a5, T1 a6, T1 a7, T1 a8) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!, a8!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!, a8!);
         #endregion
     }
 
@@ -603,7 +605,7 @@ namespace SmartCL
         /// Internal invocation method
         /// </summary>
         [SuppressMessage("CodeQuality", "IDE0051", Justification = "Used by reflection")]
-        private void InternalInvoke(T0 a0, T1 a1, T1 a2, T1 a3, T1 a4, T1 a5, T1 a6, T1 a7, T1 a8, T1 a9) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!, a8!, a9!);
+        private void InternalInvoke(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8, T9 a9) => SetArgsAndInvoke(a0!, a1!, a2!, a3!, a4!, a5!, a6!, a7!, a8!, a9!);
         #endregion
     }
 }
