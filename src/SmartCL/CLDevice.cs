@@ -26,7 +26,7 @@ namespace SmartCL
         /// <param name="platform">The owner platform</param>
         /// <param name="id">ID of the device</param>
         /// <param name="deviceType">The type of the device</param>
-        internal CLDevice(CLPlatform platform, nint id, CLDeviceType deviceType) : base(platform.cl, id)
+        internal CLDevice(CLPlatform platform, nint id, CLDeviceType deviceType) : base(platform.CL, id)
         {
             Platform = platform;
             DeviceType = deviceType;

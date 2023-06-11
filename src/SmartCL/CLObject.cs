@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace SmartCL
@@ -6,17 +7,17 @@ namespace SmartCL
     /// <summary>
     /// Represent the base for OpenCL objects
     /// </summary>
-    public abstract class CLObject
+    public abstract class CLObject : IDisposable
     {
         #region Fields
         /// <summary>
         /// The CL context
         /// </summary>
-        internal readonly CL cl;
+        internal CL CL { get; private set; }
         /// <summary>
         /// The ID of the object
         /// </summary>
-        internal readonly nint id;
+        internal nint ID { get; private set; }
         #endregion
         #region Delegates
         /// <summary>
@@ -39,8 +40,33 @@ namespace SmartCL
         /// <param name="id">The ID of the object</param>
         protected CLObject(CL cl, nint id)
         {
-            this.id = id;
-            this.cl = cl;
+            ID = id;
+            CL = cl;
+        }
+        /// <summary>
+        /// Finalizer
+        /// </summary>
+        ~CLObject()
+        {
+            Dispose(disposing: false);
+        }
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+        /// <summary>
+        /// Dispose operations
+        /// </summary>
+        /// <param name="disposing">Programmatically disposing</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (ID == 0)
+                return;
+            ID = 0;
         }
         /// <summary>
         /// Get information in string format

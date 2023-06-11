@@ -1,7 +1,8 @@
 # Rimuovere la riga seguente se si vogliono ereditare le impostazioni del file con estensione editorconfig da directory di livello superiore
 root = true
 
-spelling_exclusion_path = .\exclusion.dic
+spelling_use_default_exclusion_dictionary = false
+spelling_exclusion_path = ./exclusion.dic
 
 # File C#
 [*.cs]
@@ -251,3 +252,5 @@ dotnet_style_namespace_match_folder = true:suggestion
 
 # IDE0003: Rimuovi qualificazione
 dotnet_diagnostic.IDE0003.severity = suggestion
+# IDE0004: Rimuovi cast non necessario
+dotnet_diagnostic.IDE0004.severity = suggestion

@@ -21,7 +21,7 @@ namespace GenericTests
                     .SelectMany(p => p.Devices
                     .Where(d => d.DeviceType == CLDeviceType.Gpu || d.DeviceType == CLDeviceType.Cpu));
                 foreach (var device in devices)
-                     yield return new object[] { device.DeviceType.ToString(), device.Platform.Name, device.Platform.Vendor };
+                    yield return new object[] { device.DeviceType.ToString(), device.Platform.Name, device.Platform.Vendor };
             }
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
@@ -204,13 +204,16 @@ namespace GenericTests
                 WriteLine($"- {ext}");
             // Create the OpenCL program
             using var program = device.CreateProgram(clCode);
+            // Argument types
+            var rd = CL.Array<int>(CLAccess.ReadOnly);
+            var wr = CL.Array<int>(CLAccess.WriteOnly);
+            var clInt = CL.Var<int>();
             // Create the first argument
             var arg0 = Enumerable.Range(0, size).Select(i => i).ToArray();
             // Simulate the result
             var result0 = arg0.Select(value => value + valueAdd).ToArray();
             // Call the kernel and check the result
-            using (var main0 = program.CreateKernel("main0",
-                CLArg.RW(arg0))) {
+            using (var main0 = program.CreateKernel("main0", arg0.AsCLArg())) {
                 main0.Dims = new(size);
                 main0.Call(arg0);
                 Assert.True(arg0.Zip(result0).All(item => item.First == item.Second));
@@ -219,9 +222,7 @@ namespace GenericTests
             var arg1 = Enumerable.Range(0, size).Select(i => i).ToArray();
             var result1 = arg1.Select(value => value + valueAdd).ToArray();
             // Call the kernel and check the result
-            using (var main1 = program.CreateKernel("main1",
-                CLArg.W(valueAdd),
-                CLArg.RW(arg1))) {
+            using (var main1 = program.CreateKernel("main1", valueAdd.AsCLArg(), arg1.AsCLArg())) {
                 main1.Dims = new(size);
                 main1.Call(valueAdd, arg1);
                 Assert.True(arg1.Zip(result1).All(item => item.First == item.Second));
@@ -233,10 +234,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main2 = program.CreateKernel("main2",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.R(arg2))) {
+            using (var main2 = program.CreateKernel("main2", clInt, wr, rd)) {
                 main2.Dims = new(size);
                 main2.Call(valueAdd, arg1, arg2);
                 Assert.True(arg2.Zip(result2).All(item => item.First == item.Second));
@@ -250,11 +248,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main3 = program.CreateKernel("main3",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.R(arg3))) {
+            using (var main3 = program.CreateKernel("main3", clInt, wr, wr, rd)) {
                 main3.Dims = new(size);
                 main3.Call(valueAdd, arg1, arg2, arg3);
                 Assert.True(arg3.Zip(result3).All(item => item.First == item.Second));
@@ -270,12 +264,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main4 = program.CreateKernel("main4",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.R(arg4))) {
+            using (var main4 = program.CreateKernel("main4", clInt, wr, wr, wr, rd)) {
                 main4.Dims = new(size);
                 main4.Call(valueAdd, arg1, arg2, arg3, arg4);
                 Assert.True(arg4.Zip(result4).All(item => item.First == item.Second));
@@ -293,13 +282,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main5 = program.CreateKernel("main5",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.W(arg4),
-                CLArg.R(arg5))) {
+            using (var main5 = program.CreateKernel("main5", clInt, wr, wr, wr, wr, rd)) {
                 main5.Dims = new(size);
                 main5.Call(valueAdd, arg1, arg2, arg3, arg4, arg5);
                 Assert.True(arg5.Zip(result5).All(item => item.First == item.Second));
@@ -319,14 +302,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main6 = program.CreateKernel("main6",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.W(arg4),
-                CLArg.W(arg5),
-                CLArg.R(arg6))) {
+            using (var main6 = program.CreateKernel("main6", clInt, wr, wr, wr, wr, wr, rd)) {
                 main6.Dims = new(size);
                 main6.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6);
                 Assert.True(arg6.Zip(result6).All(item => item.First == item.Second));
@@ -348,15 +324,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main7 = program.CreateKernel("main7",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.W(arg4),
-                CLArg.W(arg5),
-                CLArg.W(arg6),
-                CLArg.R(arg7))) {
+            using (var main7 = program.CreateKernel("main7", clInt, wr, wr, wr, wr, wr, wr, rd)) {
                 main7.Dims = new(size);
                 main7.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
                 Assert.True(arg7.Zip(result7).All(item => item.First == item.Second));
@@ -380,16 +348,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main8 = program.CreateKernel("main8",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.W(arg4),
-                CLArg.W(arg5),
-                CLArg.W(arg6),
-                CLArg.W(arg7),
-                CLArg.R(arg8))) {
+            using (var main8 = program.CreateKernel("main8", clInt, wr, wr, wr, wr, wr, wr, wr, rd)) {
                 main8.Dims = new(size);
                 main8.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
                 Assert.True(arg8.Zip(result8).All(item => item.First == item.Second));
@@ -415,17 +374,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main9 = program.CreateKernel("main9",
-                CLArg.W(valueAdd),
-                CLArg.W(arg1),
-                CLArg.W(arg2),
-                CLArg.W(arg3),
-                CLArg.W(arg4),
-                CLArg.W(arg5),
-                CLArg.W(arg6),
-                CLArg.W(arg7),
-                CLArg.W(arg8),
-                CLArg.R(arg9))) {
+            using (var main9 = program.CreateKernel("main9", clInt, wr, wr, wr, wr, wr, wr, wr, wr, rd)) {
                 main9.Dims = new(size);
                 main9.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
                 Assert.True(arg9.Zip(result9).All(item => item.First == item.Second));

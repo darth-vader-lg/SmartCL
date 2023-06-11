@@ -12,7 +12,7 @@ namespace SmartCL
     /// Kernel object
     /// </summary>
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
-    public class CLKernel<TDelegate> : CLObject, IDisposable where TDelegate : Delegate
+    public class CLKernel<TDelegate> : CLObject where TDelegate : Delegate
     {
         #region Fields
         /// <summary>
@@ -32,7 +32,7 @@ namespace SmartCL
         /// <summary>
         /// Invocation delegate
         /// </summary>
-        public TDelegate Call { get; }
+        public TDelegate Call { get; private set; }
         /// <summary>
         /// Dimensions of the tensor of the global data
         /// </summary>
@@ -54,22 +54,15 @@ namespace SmartCL
         /// <param name="name">Name of the kernel</param>
         /// <param name="id">ID of the kernel</param>
         /// <param name="args">Arguments</param>
-        internal CLKernel(CLProgram program, string name, nint id, params ICLArg[] args) : base(program.cl, id)
+        internal CLKernel(CLProgram program, string name, nint id, params ICLArg[] args) : base(program.CL, id)
         {
             Program = program;
             Name = name;
-            this.args = args!;
+            this.args = args;
             buffers = new (nint id, nuint size)[this.args.Length];
             validations = new bool[this.args.Length];
             var invoke = GetType().GetMethod("InternalInvoke", BindingFlags.Instance | BindingFlags.NonPublic)!;
             Call = (TDelegate)invoke.CreateDelegate(typeof(TDelegate), this);
-        }
-        /// <summary>
-        /// Finalizer
-        /// </summary>
-        ~CLKernel()
-        {
-            Dispose(disposing: false);
         }
         /// <summary>
         /// Create a delegate for the kernel call
@@ -82,25 +75,21 @@ namespace SmartCL
             return (T)invoke.CreateDelegate(typeof(T), this);
         }
         /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
-        /// <summary>
         /// Dispose implementation
         /// </summary>
         /// <param name="disposing"></param>
-        protected virtual void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
+            if (ID == 0)
+                return;
             for (var i = 0; i < buffers.Length; i++) {
                 if (buffers[i].id == 0)
                     continue;
-                cl.Api.ReleaseMemObject(buffers[i].id);
+                CL.Api.ReleaseMemObject(buffers[i].id);
                 buffers[i] = default;
             }
+            Call = null!;
+            base.Dispose(disposing);
         }
         /// <summary>
         /// Return a parameter access type
@@ -133,7 +122,7 @@ namespace SmartCL
         /// </summary>
         /// <param name="index">Index of the parameter</param>
         /// <returns>The value</returns>
-        public object GetArg(int index) => args[index].Value;
+        public T GetArg<T>(int index) => (T)args[index].Value;
         /// <summary>
         /// Execute the kernel
         /// </summary>
@@ -143,44 +132,47 @@ namespace SmartCL
             for (var i = 0; i < args.Length; i++) {
                 if (validations[i])
                     continue;
-                if (args[i].Type.IsArray) {
+                if (args[i].Type.IsGenericType && typeof(CLBuffer<>).GetGenericTypeDefinition().IsAssignableFrom(args[i].Type.GetGenericTypeDefinition()))
+                    buffers[i] = (((CLObject)args[i].Value).ID, (nuint)args[i].Type.GenericTypeArguments[0].GetSize());
+                else if (args[i].Type.IsArray) {
+                    nuint size = 0;
                     if (args[i].Value == null) {
                         if (buffers[i].id != 0) {
-                            cl.Api.ReleaseMemObject(buffers[i].id);
+                            CL.Api.ReleaseMemObject(buffers[i].id);
                             buffers[i] = default;
                         }
                     }
                     else {
-                        var size = (nuint)(((Array)args[i].Value).LongLength * args[i].Type.GetElementType().GetSize());
+                        size = (nuint)(((Array)args[i].Value).LongLength * args[i].Type.GetElementType().GetSize());
                         if (size != buffers[i].size) {
                             if (buffers[i].id != 0)
-                                cl.Api.ReleaseMemObject(buffers[i].id);
+                                CL.Api.ReleaseMemObject(buffers[i].id);
                             var memFlags = args[i].Access switch
                             {
-                                CLAccess.Const => MemFlags.WriteOnly,
-                                CLAccess.WriteOnly => MemFlags.WriteOnly,
-                                CLAccess.ReadOnly => MemFlags.ReadOnly,
+                                CLAccess.Const => MemFlags.ReadOnly,
+                                CLAccess.WriteOnly => MemFlags.ReadOnly,
+                                CLAccess.ReadOnly => MemFlags.WriteOnly,
                                 CLAccess.ReadWrite => MemFlags.ReadWrite,
-                                _ => throw new CLException($"Invalid access type for the parameter {i}"),
+                                _ => throw new CLException($"Invalid access type for the argument {i}"),
                             };
-                            var id = cl.Api.CreateBuffer(Program.Context, memFlags, size, null, out int errcode_ret);
-                            CL.CheckResult(errcode_ret, $"Cannot create the buffer for the parameter {i}");
+                            var id = CL.Api.CreateBuffer(Program.Context, memFlags, size, null, out result);
+                            CL.CheckResult(result, $"Cannot create the buffer for the argument {i}");
                             buffers[i] = (id, size);
                         }
                     }
                     if (args[i].Access != CLAccess.ReadOnly && args[i] != null) {
                         using var value = args[i].Value.Pin();
-                        result = cl.Api.EnqueueWriteBuffer(
+                        result = CL.Api.EnqueueWriteBuffer(
                             Program.Queue,
                             buffers[i].id,
                             true,
                             0,
-                            (nuint)(((Array)args[i].Value).LongLength * args[i].Type.GetElementType().GetSize()),
+                            size,
                             value.ToPointer(),
                             0,
                             null,
                             (nint*)null);
-                        CL.CheckResult(result, $"Cannot enqueue write of the parameter {i}");
+                        CL.CheckResult(result, $"Cannot enqueue write of the argument {i}");
                     }
                 }
                 else
@@ -190,12 +182,12 @@ namespace SmartCL
             for (var i = (uint)0; i < args.Length; i++) {
                 if (buffers[i].id != 0) {
                     var bufferId = buffers[i].id;
-                    result = cl.Api.SetKernelArg(id, i, (nuint)sizeof(void*), &bufferId);
+                    result = CL.Api.SetKernelArg(ID, i, (nuint)sizeof(void*), &bufferId);
                     CL.CheckResult(result, $"Cannot set kernel arg {i}");
                 }
                 else {
                     using var value = args[i].Value.Pin();
-                    result = cl.Api.SetKernelArg(id, i, buffers[i].size, value.ToPointer());
+                    result = CL.Api.SetKernelArg(ID, i, buffers[i].size, value.ToPointer());
                     CL.CheckResult(result, $"Cannot set kernel arg {i}");
                 }
             }
@@ -203,9 +195,9 @@ namespace SmartCL
                 using var globals = Dims.Globals.Select(item => (nuint)item).ToArray().Pin();
                 using var locals = Dims.Locals.Select(item => (nuint)item).ToArray().Pin();
                 using var offsets = Dims.Offsets.Select(item => (nuint)item).ToArray().Pin();
-                result = cl.Api.EnqueueNdrangeKernel(
+                result = CL.Api.EnqueueNdrangeKernel(
                     Program.Queue,
-                    id,
+                    ID,
                     (uint)Dims.Globals.Length,
                     offsets.ToPointer<nuint>(),
                     globals.ToPointer<nuint>(),
@@ -214,15 +206,12 @@ namespace SmartCL
                     null,
                     null);
                 CL.CheckResult(result, $"Cannot enqueue kernel {Name} execution");
-                result = cl.Api.Finish(Program.Queue);
-                CL.CheckResult(result, $"Error executing {Name}");
             }
-            var waitRead = false;
             for (var i = (uint)0; i < args.Length; i++) {
                 if (!args[i].Type.IsArray || args[i].Access == CLAccess.WriteOnly || args[i].Access == CLAccess.Const || args[i].Value == null)
                     continue;
                 using var value = args[i].Value.Pin();
-                result = cl.Api.EnqueueReadBuffer(
+                result = CL.Api.EnqueueReadBuffer(
                     Program.Queue,
                     buffers[i].id,
                     true,
@@ -232,13 +221,10 @@ namespace SmartCL
                     0,
                     null,
                     (nint*)null);
-                CL.CheckResult(result, $"Cannot enqueue read of the parameter {i}");
-                waitRead = true;
+                CL.CheckResult(result, $"Cannot enqueue read of the argument {i}");
             }
-            if (waitRead) {
-                result = cl.Api.Finish(Program.Queue);
-                CL.CheckResult(result, $"Error reading result of {Name}");
-            }
+            result = CL.Api.Finish(Program.Queue);
+            CL.CheckResult(result, $"Error reading result of {Name}");
         }
         /// <summary>
         /// Set arguments and invoke the kernel
@@ -256,9 +242,9 @@ namespace SmartCL
         /// <param name="index">Index of the parameter</param>
         /// <param name="value">Value</param>
         /// <returns>The value</returns>
-        public void SetArg(int index, object value)
+        public void SetArg<T>(int index, T value)
         {
-            args[index].Value = value;
+            args[index].Value = value!;
             validations[index] = false;
         }
         #endregion
@@ -275,7 +261,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T0 Arg0 { get => (T0)GetArg(0); set => SetArg(0, value!); }
+        public T0 Arg0 { get => GetArg<T0>(0); set => SetArg(0, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -306,7 +292,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T1 Arg1 { get => (T1)GetArg(1); set => SetArg(1, value!); }
+        public T1 Arg1 { get => GetArg<T1>(1); set => SetArg(1, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -338,7 +324,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T2 Arg2 { get => (T2)GetArg(2); set => SetArg(2, value!); }
+        public T2 Arg2 { get => GetArg<T2>(2); set => SetArg(2, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -371,7 +357,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T3 Arg3 { get => (T3)GetArg(3); set => SetArg(3, value!); }
+        public T3 Arg3 { get => GetArg<T3>(3); set => SetArg(3, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -405,7 +391,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T4 Arg4 { get => (T4)GetArg(4); set => SetArg(4, value!); }
+        public T4 Arg4 { get => GetArg<T4>(4); set => SetArg(4, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -440,7 +426,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T5 Arg5 { get => (T5)GetArg(5); set => SetArg(5, value!); }
+        public T5 Arg5 { get => GetArg<T5>(5); set => SetArg(5, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -476,7 +462,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T6 Arg6 { get => (T6)GetArg(6); set => SetArg(6, value!); }
+        public T6 Arg6 { get => GetArg<T6>(6); set => SetArg(6, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -513,7 +499,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T7 Arg7 { get => (T7)GetArg(7); set => SetArg(7, value!); }
+        public T7 Arg7 { get => GetArg<T7>(7); set => SetArg(7, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -551,7 +537,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T8 Arg8 { get => (T8)GetArg(8); set => SetArg(8, value!); }
+        public T8 Arg8 { get => GetArg<T8>(8); set => SetArg(8, value!); }
         #endregion
         #region Methods
         /// <summary>
@@ -590,7 +576,7 @@ namespace SmartCL
         /// <summary>
         /// Argument
         /// </summary>
-        public T9 Arg9 { get => (T9)GetArg(9); set => SetArg(9, value!); }
+        public T9 Arg9 { get => GetArg<T9>(9); set => SetArg(9, value!); }
         #endregion
         #region Methods
         /// <summary>

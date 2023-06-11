@@ -3,9 +3,9 @@
 namespace SmartCL
 {
     /// <summary>
-    /// Argument interface
+    /// Interface for the CL Types
     /// </summary>
-    internal interface ICLArg
+    public interface ICLArg
     {
         #region Properties
         /// <summary>
@@ -13,13 +13,13 @@ namespace SmartCL
         /// </summary>
         CLAccess Access { get; }
         /// <summary>
-        /// Value
+        /// Primitive type of variable or element of an array
         /// </summary>
         Type Type { get; }
         /// <summary>
-        /// Value
+        /// Initial value
         /// </summary>
-        object Value { get; set; }
+        object Value { get; internal set; }
         #endregion
     }
 }

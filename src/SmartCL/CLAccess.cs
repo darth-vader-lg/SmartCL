@@ -1,7 +1,7 @@
 ﻿namespace SmartCL
 {
     /// <summary>
-    /// Parameter access type
+    /// Access type
     /// </summary>
     public enum CLAccess
     {

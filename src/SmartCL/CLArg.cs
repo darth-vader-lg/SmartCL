@@ -1,155 +1,96 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Text;
 
 namespace SmartCL
 {
     /// <summary>
-    /// Argument
+    /// CL Variable/argument type
     /// </summary>
-    public abstract class CLArg
+    /// <typeparam name="T">Type of variable</typeparam>
+    [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
+    public struct CLArg<T> : ICLArg
     {
-        #region Methods
-        /// <summary>
-        /// Readonly argument from value
-        /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A readonly argument</returns>
-        public static CLArgR<T> R<T>(T value) => new(value);
-        /// <summary>
-        /// Read/write argument from value
-        /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A read/write argument</returns>
-        public static CLArgRW<T> RW<T>(T value) => new(value);
-        /// <summary>
-        /// Writeonly argument from value
-        /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A writeonly argument</returns>
-        public static CLArg<T> W<T>(T value) => new(value, CLAccess.WriteOnly);
-        #endregion
-    }
-
-    /// <summary>
-    /// Argument
-    /// </summary>
-    /// <typeparam name="T">Type of the argument</typeparam>
-    public class CLArg<T> : ICLArg
-    {
-        #region Fields
-        /// <summary>
-        /// Value
-        /// </summary>
-        private object value;
-        #endregion
         #region Properties
         /// <summary>
         /// Access type
         /// </summary>
         public CLAccess Access { get; }
         /// <summary>
-        /// Value
+        /// Initial value
         /// </summary>
-        object ICLArg.Value { get => value; set => this.value = value; }
+        object ICLArg.Value { readonly get => Value!; set => Value = (T)value ?? default!; }
         /// <summary>
-        /// Value
+        /// Primitive type of variable or element of an array
         /// </summary>
         public Type Type { get; }
         /// <summary>
         /// Value
         /// </summary>
-        public T Value { get => (T)value!; set => this.value = value!; }
+        public T Value { get; set; }
         #endregion
         #region Methods
         /// <summary>
-        /// Argument's value
+        /// Constructor
         /// </summary>
-        /// <param name="value">Value</param>
         /// <param name="access">Access type</param>
-        public CLArg(T value = default(T)!, CLAccess access = CLAccess.WriteOnly)
+        public CLArg(CLAccess access) : this(access, typeof(T), default(T)!)
         {
-            Access = access;
-            Type = typeof(T);
-            this.value = value!;
         }
         /// <summary>
-        /// Convertion of T to CLArg<T>
+        /// Constructor
         /// </summary>
-        /// <param name="arg">Argument</param>
-        public static implicit operator CLArg<T>(T arg) => new(arg);
+        /// <param name="access">Access type</param>
+        /// <param name="value">Initial value</param>
+        public CLArg(CLAccess access, T value) : this(access, typeof(T), value!)
+        {
+        }
         /// <summary>
-        /// Convertion of CLArg<T> to T
+        /// Constructor
         /// </summary>
-        /// <param name="arg">Argument</param>
-        public static implicit operator T(CLArg<T> arg) => arg.Value;
+        /// <param name="access">Access type</param>
+        /// <param name="type">Primitive type</param>
+        /// <param name="value">Initial value</param>
+        private CLArg(CLAccess access, Type type, object value)
+        {
+            Access = access;
+            Type = type;
+            if (type.IsArray) {
+                if (type.GetElementType().IsArray || !type.GetElementType().IsValueType)
+                    throw new ArgumentException("A CL type array can only be a single dimension array of value types");
+            }
+            else if (!type.IsValueType && (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(CLBuffer<>).GetGenericTypeDefinition()))
+                throw new ArgumentException("A CL type can only be a value type");
+            Value = (T)value ?? default!;
+        }
         /// <summary>
-        /// Readonly argument from value
+        /// Debug display
         /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A readonly argument</returns>
-        public static CLArgR<T> R(T value) => new(value);
-        /// <summary>
-        /// Read/write argument from value
-        /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A read/write argument</returns>
-        public static CLArgRW<T> RW(T value) => new(value);
-        /// <summary>
-        /// Writeonly argument from value
-        /// </summary>
-        /// <typeparam name="T">Value's type</typeparam>
-        /// <param name="value">Value</param>
-        /// <returns>A writeonly argument</returns>
-        public static CLArg<T> W(T value) => new(value, CLAccess.WriteOnly);
-        #endregion
-    }
-
-    /// <summary>
-    /// Read only argument
-    /// </summary>
-    /// <typeparam name="T">Type of the argument</typeparam>
-    public sealed class CLArgR<T> : CLArg<T>
-    {
-        #region Methods
-        /// <summary>
-        /// Argument's value
-        /// </summary>
-        /// <param name="value">Value</param>
-        public CLArgR(T value = default!) : base(value, CLAccess.ReadOnly) { }
-        #endregion
-    }
-
-    /// <summary>
-    /// Read write argument
-    /// </summary>
-    /// <typeparam name="T">Type of the argument</typeparam>
-    public sealed class CLArgRW<T> : CLArg<T>
-    {
-        #region Methods
-        /// <summary>
-        /// Argument's value
-        /// </summary>
-        /// <param name="value">Value</param>
-        public CLArgRW(T value = default!) : base(value, CLAccess.ReadWrite) { }
-        #endregion
-    }
-
-    /// <summary>
-    /// Write only argument
-    /// </summary>
-    /// <typeparam name="T">Type of the argument</typeparam>
-    public sealed class CLArgW<T> : CLArg<T>
-    {
-        #region Methods
-        /// <summary>
-        /// Argument's value
-        /// </summary>
-        /// <param name="value">Value</param>
-        public CLArgW(T value = default!) : base(value, CLAccess.WriteOnly) { }
+        /// <returns>The human readable string</returns>
+        private readonly string GetDebuggerDisplay()
+        {
+            if (Type.IsArray) {
+                var sb = new StringBuilder();
+                sb.Append($"{Access} {Type.Name} ");
+                if (Value == null)
+                    sb.Append("null");
+                else {
+                    var array = (Array)(object)Value;
+                    for (var i = 0; i < array.Length; i++) {
+                        sb.Append(array.GetValue(i));
+                        if (i < array.Length - 1)
+                            sb.Append(" ");
+                        if (sb.Length > 80) {
+                            sb.Append("...");
+                            break;
+                        }
+                    }
+                }
+                return sb.ToString();
+            }
+            else
+                return $"{Access} {Type.Name} {Value}";
+        }
         #endregion
     }
 }

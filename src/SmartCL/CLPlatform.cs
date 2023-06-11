@@ -15,7 +15,7 @@ namespace SmartCL
         /// <summary>
         /// Platform's devices
         /// </summary>
-        public CLDevice[] Devices { get; }
+        public CLDevice[] Devices { get; private set; }
         /// <summary>
         /// Platform's extensions
         /// </summary>
@@ -90,6 +90,21 @@ namespace SmartCL
                 }
             }
             Devices = devices.ToArray();
+        }
+        /// <summary>
+        /// Dispose operations
+        /// </summary>
+        /// <param name="disposing">Programmatically dispose</param>
+        protected override void Dispose(bool disposing)
+        {
+            if (ID == 0)
+                return;
+            if (disposing) {
+                foreach (var device in Devices)
+                    device.Dispose();
+            }
+            Devices = null!;
+            base.Dispose(disposing);
         }
         /// <summary>
         /// Debugger view

@@ -38,6 +38,16 @@ namespace SmartCL
                 Platforms[i] = new(this, ids[i]);
         }
         /// <summary>
+        /// Array definition
+        /// </summary>
+        /// <typeparam name="T">Type of array element</typeparam>
+        /// <param name="access">Access type</param>
+        /// <returns></returns>
+        public static CLArg<T[]> Array<T>(CLAccess access = CLAccess.ReadWrite) where T : struct
+        {
+            return new CLArg<T[]>(access);
+        }
+        /// <summary>
         /// Check the result of a call to cl api and throw an exception if something wrong
         /// </summary>
         /// <param name="result">The result of the call</param>
@@ -69,6 +79,15 @@ namespace SmartCL
                 .DefaultIfEmpty(platform.Devices.Where(d => d.DeviceType == CLDeviceType.Default).First())
                 .First();
             return device;
+        }
+        /// <summary>
+        /// Variable definition
+        /// </summary>
+        /// <typeparam name="T">Type of variable</typeparam>
+        /// <returns>The CL variable</returns>
+        public static CLArg<T> Var<T>() where T : struct
+        {
+            return new CLArg<T>(CLAccess.Const);
         }
         #endregion
     }

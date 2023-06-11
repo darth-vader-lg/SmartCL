@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Silk.NET.OpenCL;
 
 namespace SmartCL
@@ -9,19 +10,27 @@ namespace SmartCL
     /// An OpenCL program without return value
     /// </summary>
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
-    public class CLProgram : CLObject, IDisposable
+    public class CLProgram : CLObject
     {
         #region Fields
         /// <summary>
+        /// The OpenCL context
+        /// </summary>
+        private Lazy<nint> context;
+        /// <summary>
         /// The program
         /// </summary>
-        private nint program;
+        private Lazy<nint> program;
+        /// <summary>
+        /// The commands queue
+        /// </summary>
+        private Lazy<nint> queue;
         #endregion
         #region Properties
         /// <summary>
         /// The OpenCL context
         /// </summary>
-        public nint Context { get; private set; }
+        public nint Context => context?.Value ?? throw new ObjectDisposedException(nameof(CLProgram));
         /// <summary>
         /// The device
         /// </summary>
@@ -29,7 +38,7 @@ namespace SmartCL
         /// <summary>
         /// The commands queue
         /// </summary>
-        public nint Queue { get; private set; }
+        public nint Queue => queue?.Value ?? throw new ObjectDisposedException(nameof(CLProgram));
         /// <summary>
         /// The source code
         /// </summary>
@@ -41,17 +50,74 @@ namespace SmartCL
         /// </summary>
         /// <param name="device">The device</param>
         /// <param name="sourceCode">The source code of the program</param>
-        internal CLProgram(CLDevice device, string[] sourceCode) : base(device.cl, device.id)
+        internal CLProgram(CLDevice device, string[] sourceCode) : base(device.CL, device.ID)
         {
             Device = device;
             SourceCode = sourceCode;
+            context = new(() =>
+            {
+                unsafe {
+                    var props = stackalloc nint[3];
+                    props[0] = (nint)ContextProperties.Platform;
+                    props[1] = Device.Platform.ID;
+                    props[2] = 0;
+                    var deviceId = Device.ID;
+                    static unsafe void NotifyFunc(byte* errinfo, void* privateinfo, nuint cb, void* userdata)
+                    {
+                        Console.WriteLine($"Notification: {Marshal.PtrToStringAnsi((nint)errinfo)}");
+                    }
+                    var context = CL.Api.CreateContext(props, 1, &deviceId, NotifyFunc, null, out var result);
+                    CL.CheckResult(result, "Cannot create the context");
+                    return context;
+                }
+            }, LazyThreadSafetyMode.PublicationOnly);
+            queue = new(() =>
+            {
+                var queue = CL.Api.CreateCommandQueue(Context, Device.ID, CommandQueueProperties.None, out var result);
+                CL.CheckResult(result, "Cannot create the commands queue");
+                return queue;
+
+            }, LazyThreadSafetyMode.PublicationOnly);
+            program = new(() =>
+            {
+                unsafe {
+                    var program = CL.Api.CreateProgramWithSource(Context, (uint)SourceCode.Length, SourceCode, null, out var result);
+                    CL.CheckResult(result, "Cannot create the program");
+                    try {
+                        CL.CheckResult(CL.Api.BuildProgram(program, 0, null, (byte*)null, null, null));
+                    }
+                    catch (Exception ex) {
+                        var logsize = UIntPtr.Zero;
+                        CL.Api.GetProgramBuildInfo(program, Device.ID, ProgramBuildInfo.BuildLog, 0, null, &logsize);
+                        var log = Marshal.AllocHGlobal((nint)logsize.ToPointer());
+                        CL.Api.GetProgramBuildInfo(program, Device.ID, ProgramBuildInfo.BuildLog, logsize, log.ToPointer(), (nuint*)null);
+                        throw new CLException(Marshal.PtrToStringAnsi(log), ex);
+                    }
+                    return program;
+                }
+            }, LazyThreadSafetyMode.PublicationOnly);
         }
         /// <summary>
-        /// Finalizer
+        /// Create a buffer on the device
         /// </summary>
-        ~CLProgram()
+        /// <typeparam name="T">Type of data</typeparam>
+        /// <param name="length">Length of buffer</param>
+        /// <param name="access">Access type</param>
+        /// <returns>The buffer</returns>
+        public CLBuffer<T> CreateBuffer<T>(int length, CLAccess access = CLAccess.ReadWrite) where T : struct
         {
-            Dispose(disposing: false);
+            return new CLBuffer<T>(this, length, access);
+        }
+        /// <summary>
+        /// Create a buffer from a host array
+        /// </summary>
+        /// <typeparam name="T">Type of data</typeparam>
+        /// <param name="array">User supplied array</param>
+        /// <param name="access">Access type</param>
+        /// <returns>The buffer</returns>
+        public CLBuffer<T> CreateBuffer<T>(T[] array, CLAccess access = CLAccess.ReadWrite) where T : struct
+        {
+            return new CLBuffer<T>(this, array?.Length ?? 0, access, array ?? Array.Empty<T>());
         }
         /// <summary>
         /// Create a kernel
@@ -62,7 +128,7 @@ namespace SmartCL
         public CLKernel<Action<T0>, T0> CreateKernel<T0>
             (string name,
             CLArg<T0> arg0
-            ) => new(this, name, GetKernel(name), arg0);
+            ) => new(this, name, GetKernel(name), arg0!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -76,7 +142,7 @@ namespace SmartCL
             CLArg<T0> arg0
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0>(this, name, GetKernel(name), arg0);
+            var kernel = new CLKernel<TDelegate, T0>(this, name, GetKernel(name), arg0!);
             call = kernel.Call;
             return kernel;
         }
@@ -91,7 +157,7 @@ namespace SmartCL
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1
-            ) => new(this, name, GetKernel(name), arg0, arg1);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -107,7 +173,7 @@ namespace SmartCL
             CLArg<T1> arg1
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0, T1>(this, name, GetKernel(name), arg0, arg1);
+            var kernel = new CLKernel<TDelegate, T0, T1>(this, name, GetKernel(name), arg0!, arg1!);
             call = kernel.Call;
             return kernel;
         }
@@ -123,7 +189,7 @@ namespace SmartCL
             (string name,
             CLArg<T0> arg0,
             CLArg<T1> arg1,
-            CLArg<T2> arg2) => new(this, name, GetKernel(name), arg0, arg1, arg2);
+            CLArg<T2> arg2) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -141,7 +207,7 @@ namespace SmartCL
             CLArg<T2> arg2
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0, T1, T2>(this, name, GetKernel(name), arg0, arg1, arg2);
+            var kernel = new CLKernel<TDelegate, T0, T1, T2>(this, name, GetKernel(name), arg0!, arg1!, arg2!);
             call = kernel.Call;
             return kernel;
         }
@@ -160,7 +226,7 @@ namespace SmartCL
             CLArg<T1> arg1,
             CLArg<T2> arg2,
             CLArg<T3> arg3
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -180,7 +246,7 @@ namespace SmartCL
             CLArg<T3> arg3
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3>(this, name, GetKernel(name), arg0, arg1, arg2, arg3);
+            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3>(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!);
             call = kernel.Call;
             return kernel;
         }
@@ -201,7 +267,7 @@ namespace SmartCL
             CLArg<T2> arg2,
             CLArg<T3> arg3,
             CLArg<T4> arg4
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -223,7 +289,7 @@ namespace SmartCL
             CLArg<T4> arg4
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4>(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4);
+            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4>(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!);
             call = kernel.Call;
             return kernel;
         }
@@ -246,7 +312,7 @@ namespace SmartCL
             CLArg<T3> arg3,
             CLArg<T4> arg4,
             CLArg<T5> arg5
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -270,7 +336,7 @@ namespace SmartCL
             CLArg<T5> arg5
             ) where TDelegate : Delegate
         {
-            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5>(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5);
+            var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5>(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!);
             call = kernel.Call;
             return kernel;
         }
@@ -295,7 +361,7 @@ namespace SmartCL
             CLArg<T4> arg4,
             CLArg<T5> arg5,
             CLArg<T6> arg6
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -322,7 +388,7 @@ namespace SmartCL
             ) where TDelegate : Delegate
         {
             var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5, T6>(
-                this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+                this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!);
             call = kernel.Call;
             return kernel;
         }
@@ -349,7 +415,7 @@ namespace SmartCL
             CLArg<T5> arg5,
             CLArg<T6> arg6,
             CLArg<T7> arg7
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -378,7 +444,7 @@ namespace SmartCL
             ) where TDelegate : Delegate
         {
             var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5, T6, T7>(
-                this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+                this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!);
             call = kernel.Call;
             return kernel;
         }
@@ -393,7 +459,7 @@ namespace SmartCL
         /// <typeparam name="T5">Type of the sixth parameter</typeparam>
         /// <typeparam name="T6">Type of the seventh parameter</typeparam>
         /// <typeparam name="T7">Type of the eighth parameter</typeparam>
-        /// <typeparam name="T8">Type of the nineth parameter</typeparam>
+        /// <typeparam name="T8">Type of the ninth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
         public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7, T8>, T0, T1, T2, T3, T4, T5, T6, T7, T8>
@@ -408,7 +474,7 @@ namespace SmartCL
             CLArg<T6> arg6,
             CLArg<T7> arg7,
             CLArg<T8> arg8
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!, arg8!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -421,7 +487,7 @@ namespace SmartCL
         /// <typeparam name="T5">Type of the sixth parameter</typeparam>
         /// <typeparam name="T6">Type of the seventh parameter</typeparam>
         /// <typeparam name="T7">Type of the eighth parameter</typeparam>
-        /// <typeparam name="T8">Type of the nineth parameter</typeparam>
+        /// <typeparam name="T8">Type of the ninth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <param name="call">Delegate for kernel call</param>
         /// <returns>The kernel</returns>
@@ -439,7 +505,7 @@ namespace SmartCL
             ) where TDelegate : Delegate
         {
             var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5, T6, T7, T8>(
-                this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+                this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!, arg8!);
             call = kernel.Call;
             return kernel;
         }
@@ -454,11 +520,11 @@ namespace SmartCL
         /// <typeparam name="T5">Type of the sixth parameter</typeparam>
         /// <typeparam name="T6">Type of the seventh parameter</typeparam>
         /// <typeparam name="T7">Type of the eighth parameter</typeparam>
-        /// <typeparam name="T8">Type of the nineth parameter</typeparam>
+        /// <typeparam name="T8">Type of the ninth parameter</typeparam>
         /// <typeparam name="T9">Type of the tenth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <returns>The kernel</returns>
-        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> 
+        public CLKernel<Action<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
             CreateKernel<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
             (string name,
             CLArg<T0> arg0,
@@ -471,7 +537,7 @@ namespace SmartCL
             CLArg<T7> arg7,
             CLArg<T8> arg8,
             CLArg<T9> arg9
-            ) => new(this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+            ) => new(this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!, arg8!, arg9!);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -484,7 +550,7 @@ namespace SmartCL
         /// <typeparam name="T5">Type of the sixth parameter</typeparam>
         /// <typeparam name="T6">Type of the seventh parameter</typeparam>
         /// <typeparam name="T7">Type of the eighth parameter</typeparam>
-        /// <typeparam name="T8">Type of the nineth parameter</typeparam>
+        /// <typeparam name="T8">Type of the ninth parameter</typeparam>
         /// <typeparam name="T9">Type of the tenth parameter</typeparam>
         /// <param name="name">The kernel's name</param>
         /// <param name="call">Delegate for kernel call</param>
@@ -504,32 +570,29 @@ namespace SmartCL
             ) where TDelegate : Delegate
         {
             var kernel = new CLKernel<TDelegate, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>(
-                this, name, GetKernel(name), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+                this, name, GetKernel(name), arg0!, arg1!, arg2!, arg3!, arg4!, arg5!, arg6!, arg7!, arg8!, arg9!);
             call = kernel.Call;
             return kernel;
         }
         /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
-        /// <summary>
-        /// Dispose implementation
+        /// Dispose operations
         /// </summary>
         /// <param name="disposing">Programmatically dispose</param>
-        protected virtual void Dispose(bool disposing)
+        protected override void Dispose(bool disposing)
         {
-            if (Queue != 0) {
-                cl.Api.ReleaseCommandQueue(Queue);
-                Queue = 0;
+            if (queue != null) {
+                CL.Api.ReleaseCommandQueue(Queue);
+                queue = null!;
             }
-            if (Context != 0) {
-                cl.Api.ReleaseContext(Context);
-                Context = 0;
+            if (context != null) {
+                CL.Api.ReleaseContext(Context);
+                context = null!;
             }
+            if (program != null) {
+                CL.Api.ReleaseProgram(program.Value);
+                program = null!;
+            }
+            base.Dispose(disposing);
         }
         /// <summary>
         /// Initialize the program and return a kernel id
@@ -537,41 +600,11 @@ namespace SmartCL
         /// <param name="name">Name of the kernel</param>
         /// <returns>The kernel ID</returns>
         /// <exception cref="CLException">Exception</exception>
-        private unsafe nint GetKernel(string name)
+        private nint GetKernel(string name)
         {
-            int result;
-            if (Context == 0) {
-                var props = stackalloc nint[3];
-                props[0] = (nint)ContextProperties.Platform;
-                props[1] = Device.Platform.id;
-                props[2] = 0;
-                var deviceId = Device.id;
-                static unsafe void NotifyFunc(byte* errinfo, void* privateinfo, nuint cb, void* userdata)
-                {
-                    Console.WriteLine($"Notification: {Marshal.PtrToStringAnsi((nint)errinfo)}");
-                }
-                Context = cl.Api.CreateContext(props, 1, &deviceId, NotifyFunc, null, &result);
-                CL.CheckResult(result, "Cannot create the context");
-            }
-            if (Queue == 0) {
-                Queue = cl.Api.CreateCommandQueue(Context, Device.id, CommandQueueProperties.None, &result);
-                CL.CheckResult(result, "Cannot create the commands queue");
-            }
-            if (program == 0) {
-                program = cl.Api.CreateProgramWithSource(Context, (uint)SourceCode.Length, SourceCode, null, &result);
-                CL.CheckResult(result, "Cannot create the program");
-                try {
-                    CL.CheckResult(cl.Api.BuildProgram(program, 0, null, (byte*)null, null, null));
-                }
-                catch (Exception ex) {
-                    var logsize = UIntPtr.Zero;
-                    cl.Api.GetProgramBuildInfo(program, Device.id, ProgramBuildInfo.BuildLog, 0, null, &logsize);
-                    var log = Marshal.AllocHGlobal((nint)logsize.ToPointer());
-                    cl.Api.GetProgramBuildInfo(program, Device.id, ProgramBuildInfo.BuildLog, logsize, log.ToPointer(), (nuint*)null);
-                    throw new CLException(Marshal.PtrToStringAnsi(log), ex);
-                }
-            }
-            var kernelID = cl.Api.CreateKernel(program, name, &result);
+            if (program == null)
+                throw new ObjectDisposedException(nameof(CLProgram));
+            var kernelID = CL.Api.CreateKernel(program.Value, name, out var result);
             CL.CheckResult(result, $"Cannot create the kernel {name}");
             return kernelID;
         }
