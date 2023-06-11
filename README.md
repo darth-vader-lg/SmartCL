@@ -35,7 +35,7 @@ Prerequisites
 
 Instructions
 - Clone the repository (recursively)
-- Run build.sh, build.cmd or build.ps1.
+- In the script folder there are scripts for build, test and publish the release configuration of the API. Just tun them.
 
 <h1 align="center">Contributing</h1>
 

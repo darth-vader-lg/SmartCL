@@ -5,7 +5,26 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <LangVersion>9.0</LangVersion>
+    <NeutralLanguage />
+    <NoWarn>8002</NoWarn>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <VersionPrefix>$(SmartCLVersion)</VersionPrefix>
+    <Authors>Luigi Generale</Authors>
+    <Product>OpenCL NET library </Product>
+    <Description>OpenCL wrapper to use that API in a more simple way and in a full NET environment</Description>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\..\SmartCL.snk</AssemblyOriginatorKeyFile>
+    <GeneratePackageOnBuild>$(EnablePack)</GeneratePackageOnBuild>
+    <PackageId>$(PrefixID)SmartCL</PackageId>
+    <PackageLicenseExpression />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\$(PackageLicenseFile)" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\$(PackageReadmeFile)" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.OpenCL" Version="2.17.1" />

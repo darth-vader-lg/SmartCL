@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <!-- The versions of products -->
+  <PropertyGroup>
+    <ConsoleAppVersion>1.0.0</ConsoleAppVersion>
+    <SmartCLVersion>1.0.0</SmartCLVersion>
+  </PropertyGroup>
+
+  <!-- Common product's info -->
+  <PropertyGroup>
+    <PrefixId>LG.</PrefixId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+    <RepositoryUrl>https://github.com/darth-vader-lg/SmartCL</RepositoryUrl>
+    <RepositoryRef>master</RepositoryRef>
+    <RepositoryType>git</RepositoryType>
+    <!--<PackageProjectUrl>https://github.com/darth-vader-lg/ODModelBuilderTF</PackageProjectUrl>-->
+    <PackageTags>csharp;dotnet;opencl;silk;gpu-computing</PackageTags>
+    <Copyright>Copyright 2023 Luigi Generale</Copyright>
+  </PropertyGroup>
+
+  <!-- Optional version suffix -->
+  <PropertyGroup>
+    <VersionSuffix>RC.1</VersionSuffix>
+  </PropertyGroup>
+
+</Project>

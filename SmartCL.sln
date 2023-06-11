@@ -10,8 +10,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
 		.gitignore = .gitignore
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
 		exclusion.dic = exclusion.dic
+		LICENSE.md = LICENSE.md
 		README.md = README.md
+		Versions.props = Versions.props
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{910F423A-645F-40E0-8FB8-870A1CBFE81C}"
@@ -20,7 +24,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{91
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{786FEED3-F270-49C1-B890-F017C79108E3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Generic.Tests", "test\Generic.Tests\Generic.Tests.csproj", "{AC03452E-CC74-4639-9575-DCD2A17B7615}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Generic.Tests", "test\Generic.Tests\Generic.Tests.csproj", "{AC03452E-CC74-4639-9575-DCD2A17B7615}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Common.Tests", "test\Common.Tests\Common.Tests.csproj", "{32CA57AD-9B0C-4CB5-BBA8-84FDF6EA5449}"
 EndProject
