@@ -1,41 +1,33 @@
 ﻿using System.Linq;
-using Silk.NET.OpenCL;
+using System.Runtime.InteropServices;
 
 namespace SmartCL
 {
     /// <summary>
     /// Smart OpenCL class
     /// </summary>
-    public class CL
+    public static class CL
     {
         #region Properties
         /// <summary>
-        /// The OpenCL Api
-        /// </summary>
-        internal Silk.NET.OpenCL.CL Api { get; }
-        /// <summary>
         /// The available platforms
         /// </summary>
-        public CLPlatform[] Platforms { get; }
+        public static CLPlatform[] Platforms { get; }
         #endregion
         #region Methods
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="cl">CL Api instance</param>
-        private unsafe CL(Silk.NET.OpenCL.CL cl)
+        static CL()
         {
-            // Store the cl api context
-            Api = cl;
             // Get the number of available platforms
-            CheckResult(cl.GetPlatformIDs(0, null, out var num_platforms), "Cannot get the number of platforms");
+            CheckResult(GetPlatformIDs(0, null!, out var num_platforms), "Cannot get the number of platforms");
             // Get the platforms IDs
-            var ids = stackalloc nint[(int)num_platforms];
-            CheckResult(cl.GetPlatformIDs(num_platforms, ids, out num_platforms), "Cannot get the platforms IDs");
+            var ids = new nint[num_platforms];
+            CheckResult(GetPlatformIDs(num_platforms, ids, out var _), "Cannot get the platforms IDs");
             // Build the platforms
-            Platforms = new CLPlatform[num_platforms];
-            for (var i = 0; i < num_platforms; i++)
-                Platforms[i] = new(this, ids[i]);
+            Platforms = Enumerable.Range(0, num_platforms).Select(i => new CLPlatform(ids[i])).ToArray();
         }
         /// <summary>
         /// Array definition
@@ -51,20 +43,13 @@ namespace SmartCL
         /// Check the result of a call to cl api and throw an exception if something wrong
         /// </summary>
         /// <param name="result">The result of the call</param>
-        internal static void CheckResult(int result, string? message = null)
+        internal static void CheckResult(CLError result, string? message = null)
         {
             if (result == 0)
                 return;
             if (message != null)
-                throw new CLException($"{message}. Error: {(ErrorCodes)result}");
-            throw new CLException($"Error: {(ErrorCodes)result}");
-        }
-        /// <summary>
-        /// Create an instance of SmartOpenCL
-        /// </summary>
-        public static CL Create()
-        {
-            return new CL(Silk.NET.OpenCL.CL.GetApi());
+                throw new CLException($"{message}. Error: {result}");
+            throw new CLException($"Error: {result}");
         }
         /// <summary>
         /// Return the first available GPU device or the default if no one GPU is present
@@ -72,14 +57,21 @@ namespace SmartCL
         /// <returns>The device</returns>
         public static CLDevice GetFirstGpuOrDefault()
         {
-            var cl = Create();
-            var platform = cl.Platforms.Where(p => p.Devices.Any(d => d.DeviceType == CLDeviceType.Gpu)).DefaultIfEmpty(cl.Platforms.First()).First();
+            var platform = Platforms.Where(p => p.Devices.Any(d => d.DeviceType == CLDeviceType.Gpu)).DefaultIfEmpty(Platforms.First()).First();
             var device = platform.Devices
                 .Where(d => d.DeviceType == CLDeviceType.Gpu)
                 .DefaultIfEmpty(platform.Devices.Where(d => d.DeviceType == CLDeviceType.Default).First())
                 .First();
             return device;
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clGetPlatformIDs")]
+        private static extern CLError GetPlatformIDs(
+            [In] int num_entries,
+            [Out] nint[] platforms,
+            [Out] out int num_platforms);
         /// <summary>
         /// Variable definition
         /// </summary>

@@ -1,18 +1,61 @@
 ﻿using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
-using Silk.NET.OpenCL;
 
 namespace SmartCL
 {
+    public abstract class CLKernel : CLObject
+    {
+        #region Methods
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="id">The ID of the object</param>
+        protected CLKernel(nint id) : base(id)
+        {
+        }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clEnqueueNDRangeKernel")]
+        private protected static extern CLError EnqueueNDRangeKernel(
+            [In] nint command_queue,
+            [In] nint kernel,
+            [In] uint work_dim,
+            [In] nuint[] global_work_offset,
+            [In] nuint[] global_work_size,
+            [In] nuint[] local_work_size,
+            [In] uint num_events_in_wait_list,
+            [In] nint[] event_wait_list,
+            [In, Out] ref nint new_event);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clFinish")]
+        private protected static extern CLError Finish([In] nint command_queue);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clSetKernelArg")]
+        internal static extern CLError SetKernelArg(
+            [In] nint kernel,
+            [In] uint arg_index,
+            [In] nuint arg_size,
+            [In] IntPtr arg_value);
+        #endregion
+    }
+
     /// <summary>
     /// Kernel object
     /// </summary>
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
-    public class CLKernel<TDelegate> : CLObject where TDelegate : Delegate
+    public class CLKernel<TDelegate> : CLKernel where TDelegate : Delegate
     {
         #region Fields
         /// <summary>
@@ -22,7 +65,19 @@ namespace SmartCL
         /// <summary>
         /// Buffers
         /// </summary>
-        private readonly (nint id, nuint size)[] buffers;
+        private readonly CLBuffer[] buffers;
+        /// <summary>
+        /// Tensor dimensione and rank
+        /// </summary>
+        private nuint[] globalSizes = { 1 };
+        /// <summary>
+        /// Read kernel results actions
+        /// </summary>
+        private readonly Action[] readResultsActions;
+        /// <summary>
+        /// Set kernel arguments actions
+        /// </summary>
+        private readonly Action[] setArgActions;
         /// <summary>
         /// Parameters validations
         /// </summary>
@@ -34,9 +89,20 @@ namespace SmartCL
         /// </summary>
         public TDelegate Call { get; private set; }
         /// <summary>
-        /// Dimensions of the tensor of the global data
+        /// Dimensions and rank of the global data tensor
         /// </summary>
-        public CLDims Dims { get; set; } = new();
+        public int[] GlobalSizes
+        {
+            get => globalSizes.Select(dim => (int)dim).ToArray();
+            set
+            {
+                if (value == null)
+                    throw new CLException("Dims cannot be null");
+                if (value.Length < 1 || value.Length > 3)
+                    throw new CLException("Dims must have a rank grather than 0 and less than 4");
+                globalSizes = value.Select(dim => (nuint)dim).ToArray();
+            }
+        }
         /// <summary>
         /// The name of the kernel
         /// </summary>
@@ -54,15 +120,144 @@ namespace SmartCL
         /// <param name="name">Name of the kernel</param>
         /// <param name="id">ID of the kernel</param>
         /// <param name="args">Arguments</param>
-        internal CLKernel(CLProgram program, string name, nint id, params ICLArg[] args) : base(program.CL, id)
+        internal CLKernel(CLProgram program, string name, nint id, params ICLArg[] args) : base(id)
         {
+            // Store parameters
             Program = program;
             Name = name;
             this.args = args;
-            buffers = new (nint id, nuint size)[this.args.Length];
+            // Create data
+            setArgActions = new Action[args.Length];
+            readResultsActions = new Action[args.Length];
+            buffers = new CLBuffer[this.args.Length];
             validations = new bool[this.args.Length];
+            // Create the delegate for kernel invocation
             var invoke = GetType().GetMethod("InternalInvoke", BindingFlags.Instance | BindingFlags.NonPublic)!;
             Call = (TDelegate)invoke.CreateDelegate(typeof(TDelegate), this);
+            // Create actions for writing 
+            for (var i = 0; i < args.Length; i++) {
+                // Current argument
+                var arg = args[i];
+                // CLBuffer(s) management
+                if (arg.Type.IsGenericType && typeof(CLBuffer<>).GetGenericTypeDefinition().IsAssignableFrom(arg.Type.GetGenericTypeDefinition())) {
+                    // Store the buffer id and the element size
+                    buffers[i] = (CLBuffer)arg.Value;
+                    // Create the set kernel argument action
+                    var ix = (uint)i;
+                    setArgActions[i] = new(() =>
+                    {
+                        var h = GCHandle.Alloc(buffers[ix].ID, GCHandleType.Pinned);
+                        try {
+                            var result = SetKernelArg(ID, ix, (nuint)IntPtr.Size, h.AddrOfPinnedObject());
+                            CL.CheckResult(result, $"Cannot set kernel arg {ix}");
+                        }
+                        finally {
+                            h.Free();
+                        }
+                    });
+                    readResultsActions[i] = null!;
+                }
+                // Managed arrays management
+                else if (arg.Type.IsArray) {
+                    // Create buffer function
+                    var CreateBufferMethod =
+                        typeof(CLKernel<TDelegate>)
+                        .GetMethod(nameof(CreateBuffer), BindingFlags.Instance | BindingFlags.NonPublic)
+                        .MakeGenericMethod(args[i].Type.GetElementType());
+                    var CreateBuffer_T = (Func<int, CLAccess, object, CLBuffer>)CreateBufferMethod.CreateDelegate(typeof(Func<int, CLAccess, object, CLBuffer>), this);
+                    // Create the write buffer and set kernel argument action
+                    var ix = i;
+                    setArgActions[i] = new(() =>
+                    {
+                        // Current argument and buffer data
+                        ref var arg = ref args[ix];
+                        ref var buffer = ref buffers[ix];
+                        // Check if the array is null to release the buffer
+                        if (arg.Value == null) {
+                            if (buffer != null) {
+                                buffer.Dispose();
+                                buffer = null;
+                            }
+                        }
+                        // Buffer creation
+                        else {
+                            // length of buffer
+                            var length = ((ICollection)arg.Value).Count;
+                            // Check if the buffer must be re-allocated
+                            if (length != (buffer?.Length ?? 0)) {
+                                // Release previous buffer
+                                buffer?.Dispose();
+                                // Create the buffer and store its info
+                                buffer = CreateBuffer_T(length, arg.Access, null!);
+                            }
+                        }
+                        // Write the buffer if it's not read-only
+                        if (arg.Access != CLAccess.ReadOnly && arg.Value != null && buffer != null) {
+                            var result = buffer.EnqueueWriteBuffer(0, buffer.size, arg.Value);
+                            CL.CheckResult(result, $"Cannot enqueue write of the argument {ix}");
+                        }
+                        // Set the kernel argument
+                        if (buffer != null) {
+                            var h = GCHandle.Alloc(buffer.ID, GCHandleType.Pinned);
+                            try {
+                                var result = SetKernelArg(ID, (uint)ix, (nuint)IntPtr.Size, h.AddrOfPinnedObject());
+                                CL.CheckResult(result, $"Cannot set kernel arg {ix}");
+                            }
+                            finally {
+                                h.Free();
+                            }
+                        }
+                        else {
+                            var result = SetKernelArg(ID, (uint)ix, (nuint)IntPtr.Size, IntPtr.Zero);
+                            CL.CheckResult(result, $"Cannot set kernel arg {ix}");
+                        }
+                    });
+                    if (arg.Access == CLAccess.WriteOnly || arg.Access == CLAccess.Const)
+                        readResultsActions[i] = null!;
+                    else {
+                        readResultsActions[i] = new(() =>
+                        {
+                            ref var arg = ref args[ix];
+                            ref var buffer = ref buffers[ix];
+                            if (arg.Value == null || buffer == null)
+                                return;
+                            var result = buffer.EnqueueReadBuffer(0, buffer.size, arg.Value);
+                            CL.CheckResult(result, $"Cannot enqueue write of the argument {ix}");
+                        });
+                    }
+                }
+                // Standard value types management
+                else {
+                    // Store buffer information
+                    var size = (nuint)Marshal.SizeOf(args[i].Type);
+                    // Create the kernel set argument function
+                    var setMethod =
+                        GetType()
+                        .GetMethod(nameof(SetKernelArg), BindingFlags.Instance | BindingFlags.NonPublic)
+                        .MakeGenericMethod(args[i].Type);
+                    var setFunc = (Func<uint, nuint, object, CLError>)setMethod.CreateDelegate(typeof(Func<uint, nuint, object, CLError>), this);
+                    var ix = i;
+                    // Create the set argument action
+                    setArgActions[i] = new(() =>
+                    {
+                        ref var arg = ref args[ix];
+                        var result = setFunc((uint)ix, size, arg.Value);
+                        CL.CheckResult(result, $"Cannot set kernel arg {ix}");
+                    });
+                    readResultsActions[i] = null!;
+                }
+            }
+        }
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="T">Type of data</param>
+        /// <param name="length">Length of buffer</param>
+        /// <param name="access">Access type</param>
+        /// <param name="hostArray">Host supplied array</param>
+        private CLBuffer CreateBuffer<T>(int length, CLAccess access, object hostArray = null!) where T : unmanaged
+        {
+            return CLBuffer<T>.Create(Program, length, access, (T[])hostArray);
         }
         /// <summary>
         /// Create a delegate for the kernel call
@@ -83,10 +278,8 @@ namespace SmartCL
             if (ID == 0)
                 return;
             for (var i = 0; i < buffers.Length; i++) {
-                if (buffers[i].id == 0)
-                    continue;
-                CL.Api.ReleaseMemObject(buffers[i].id);
-                buffers[i] = default;
+                buffers[i]?.Dispose();
+                buffers[i] = null!;
             }
             Call = null!;
             base.Dispose(disposing);
@@ -126,104 +319,34 @@ namespace SmartCL
         /// <summary>
         /// Execute the kernel
         /// </summary>
-        unsafe public void Invoke()
+        public void Invoke()
         {
-            int result;
-            for (var i = 0; i < args.Length; i++) {
+            // Set kernel arguments
+            for (var (i, iLen) = (0, args.Length); i < iLen; ++i) {
                 if (validations[i])
                     continue;
-                if (args[i].Type.IsGenericType && typeof(CLBuffer<>).GetGenericTypeDefinition().IsAssignableFrom(args[i].Type.GetGenericTypeDefinition()))
-                    buffers[i] = (((CLObject)args[i].Value).ID, (nuint)args[i].Type.GenericTypeArguments[0].GetSize());
-                else if (args[i].Type.IsArray) {
-                    nuint size = 0;
-                    if (args[i].Value == null) {
-                        if (buffers[i].id != 0) {
-                            CL.Api.ReleaseMemObject(buffers[i].id);
-                            buffers[i] = default;
-                        }
-                    }
-                    else {
-                        size = (nuint)(((Array)args[i].Value).LongLength * args[i].Type.GetElementType().GetSize());
-                        if (size != buffers[i].size) {
-                            if (buffers[i].id != 0)
-                                CL.Api.ReleaseMemObject(buffers[i].id);
-                            var memFlags = args[i].Access switch
-                            {
-                                CLAccess.Const => MemFlags.ReadOnly,
-                                CLAccess.WriteOnly => MemFlags.ReadOnly,
-                                CLAccess.ReadOnly => MemFlags.WriteOnly,
-                                CLAccess.ReadWrite => MemFlags.ReadWrite,
-                                _ => throw new CLException($"Invalid access type for the argument {i}"),
-                            };
-                            var id = CL.Api.CreateBuffer(Program.Context, memFlags, size, null, out result);
-                            CL.CheckResult(result, $"Cannot create the buffer for the argument {i}");
-                            buffers[i] = (id, size);
-                        }
-                    }
-                    if (args[i].Access != CLAccess.ReadOnly && args[i] != null) {
-                        using var value = args[i].Value.Pin();
-                        result = CL.Api.EnqueueWriteBuffer(
-                            Program.Queue,
-                            buffers[i].id,
-                            true,
-                            0,
-                            size,
-                            value.ToPointer(),
-                            0,
-                            null,
-                            (nint*)null);
-                        CL.CheckResult(result, $"Cannot enqueue write of the argument {i}");
-                    }
-                }
-                else
-                    buffers[i] = (0, (nuint)args[i].Type.GetSize());
+                setArgActions[i]();
                 validations[i] = true;
             }
+            // Enqueue the kernel invocation
+            var result = EnqueueNDRangeKernel(
+                Program.Queue,
+                ID,
+                (uint)globalSizes.Length,
+                null!,
+                globalSizes,
+                null!,
+                0u,
+                null!,
+                ref Unsafe.NullRef<nint>());
+            CL.CheckResult(result, $"Cannot enqueue kernel {Name} execution");
+            // Read results
             for (var i = (uint)0; i < args.Length; i++) {
-                if (buffers[i].id != 0) {
-                    var bufferId = buffers[i].id;
-                    result = CL.Api.SetKernelArg(ID, i, (nuint)sizeof(void*), &bufferId);
-                    CL.CheckResult(result, $"Cannot set kernel arg {i}");
-                }
-                else {
-                    using var value = args[i].Value.Pin();
-                    result = CL.Api.SetKernelArg(ID, i, buffers[i].size, value.ToPointer());
-                    CL.CheckResult(result, $"Cannot set kernel arg {i}");
-                }
-            }
-            {
-                using var globals = Dims.Globals.Select(item => (nuint)item).ToArray().Pin();
-                using var locals = Dims.Locals.Select(item => (nuint)item).ToArray().Pin();
-                using var offsets = Dims.Offsets.Select(item => (nuint)item).ToArray().Pin();
-                result = CL.Api.EnqueueNdrangeKernel(
-                    Program.Queue,
-                    ID,
-                    (uint)Dims.Globals.Length,
-                    offsets.ToPointer<nuint>(),
-                    globals.ToPointer<nuint>(),
-                    locals.ToPointer<nuint>(),
-                    0u,
-                    null,
-                    null);
-                CL.CheckResult(result, $"Cannot enqueue kernel {Name} execution");
-            }
-            for (var i = (uint)0; i < args.Length; i++) {
-                if (!args[i].Type.IsArray || args[i].Access == CLAccess.WriteOnly || args[i].Access == CLAccess.Const || args[i].Value == null)
+                if (readResultsActions[i] == null || args[i].Value == null)
                     continue;
-                using var value = args[i].Value.Pin();
-                result = CL.Api.EnqueueReadBuffer(
-                    Program.Queue,
-                    buffers[i].id,
-                    true,
-                    0,
-                    (nuint)(((Array)args[i].Value).LongLength * args[i].Type.GetElementType().GetSize()),
-                    value.ToPointer(),
-                    0,
-                    null,
-                    (nint*)null);
-                CL.CheckResult(result, $"Cannot enqueue read of the argument {i}");
+                readResultsActions[i]();
             }
-            result = CL.Api.Finish(Program.Queue);
+            result = Finish(Program.Queue);
             CL.CheckResult(result, $"Error reading result of {Name}");
         }
         /// <summary>
@@ -246,6 +369,24 @@ namespace SmartCL
         {
             args[index].Value = value!;
             validations[index] = false;
+        }
+        /// <summary>
+        /// Generics kernel argument setting method
+        /// </summary>
+        /// <typeparam name="T">Type of argument</typeparam>
+        /// <param name="index">Argument index</param>
+        /// <param name="size">Size of argument</param>
+        /// <param name="arg">Argument</param>
+        /// <returns></returns>
+        internal CLError SetKernelArg<T>(uint index, nuint size, object arg) where T : unmanaged
+        {
+            var h = GCHandle.Alloc(arg, GCHandleType.Pinned);
+            try {
+                return SetKernelArg(ID, index, size, h.AddrOfPinnedObject());
+            }
+            finally {
+                h.Free();
+            }
         }
         #endregion
     }

@@ -12,7 +12,7 @@
         /// <typeparam name="T">Type of the value</typeparam>
         /// <param name="value">Value</param>
         /// <returns>The value as a variable definition</returns>
-        public static CLArg<T> AsCLArg<T>(this T value) where T : struct
+        public static CLArg<T> AsCLArg<T>(this T value) where T : unmanaged
         {
             return new(CLAccess.Const, value);
         }
@@ -22,7 +22,7 @@
         /// <typeparam name="T">Type of the values in the buffer</typeparam>
         /// <param name="buffer">Buffer</param>
         /// <returns>The buffer as a variable definition</returns>
-        public static CLArg<CLBuffer<T>> AsCLArg<T>(this CLBuffer<T> buffer) where T : struct
+        public static CLArg<CLBuffer<T>> AsCLArg<T>(this CLBuffer<T> buffer) where T : unmanaged
         {
             return new(buffer?.Access ?? CLAccess.ReadWrite, buffer!);
         }
@@ -33,7 +33,7 @@
         /// <param name="array">Array of standard values</param>
         /// <param name="access">Access type for the array</param>
         /// <returns>The array as a variable definition</returns>
-        public static CLArg<T[]> AsCLArg<T>(this T[] array, CLAccess access = CLAccess.ReadWrite) where T : struct
+        public static CLArg<T[]> AsCLArg<T>(this T[] array, CLAccess access = CLAccess.ReadWrite) where T : unmanaged
         {
             return new(access, array);
         }
@@ -43,7 +43,7 @@
         /// <typeparam name="T">Type of array elements</typeparam>
         /// <param name="array">Array of standard values</param>
         /// <returns>The array as a variable definition</returns>
-        public static CLArg<T[]> AsCLArgR<T>(this T[] array) where T : struct
+        public static CLArg<T[]> AsCLArgR<T>(this T[] array) where T : unmanaged
         {
             return new(CLAccess.ReadOnly, array);
         }
@@ -53,7 +53,7 @@
         /// <typeparam name="T">Type of array elements</typeparam>
         /// <param name="array">Array of standard values</param>
         /// <returns>The array as a variable definition</returns>
-        public static CLArg<T[]> AsCLArgRW<T>(this T[] array) where T : struct
+        public static CLArg<T[]> AsCLArgRW<T>(this T[] array) where T : unmanaged
         {
             return new(CLAccess.ReadWrite, array);
         }
@@ -63,7 +63,7 @@
         /// <typeparam name="T">Type of array elements</typeparam>
         /// <param name="array">Array of standard values</param>
         /// <returns>The array as a variable definition</returns>
-        public static CLArg<T[]> AsCLArgW<T>(this T[] array) where T : struct
+        public static CLArg<T[]> AsCLArgW<T>(this T[] array) where T : unmanaged
         {
             return new(CLAccess.WriteOnly, array);
         }

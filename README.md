@@ -3,8 +3,7 @@
 
 SmartCL is a wrapper library for simple accelerated computing in NET environment, providing a managed binding to OpenCL!
 
-SmartCL works on any .NET Standard 2.0 compliant platform, including .NET 6.0, Xamarin, .NET Framework 4.6.1+, and .NET Core 2.0+.
-The bridge is made using the [Silk.NET](https://github.com/dotnet/Silk.NET) libraries.
+SmartCL works on any .NET Standard 2.0 / 2.1 compliant platform, including .NET 6.0, Xamarin, .NET Framework 4.6.1+, and .NET Core 2.0+.
 
 <!-- Package description inserted here automatically. -->
 
@@ -12,7 +11,7 @@ The bridge is made using the [Silk.NET](https://github.com/dotnet/Silk.NET) libr
 
 ### Performance
 
-You can count on us to deliver blazing fast bindings with negligible overhead induced by Silk.NET!
+Several optimizations for fast access to OpenCL native functions.
 
 ### Easy to use
 

@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Silk.NET.OpenCL;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SmartCL
 {
@@ -45,48 +46,65 @@ namespace SmartCL
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="cl">The api</param>
         /// <param name="id">ID of the platform</param>
-        unsafe internal CLPlatform(CL cl, nint id) : base(cl, id)
+        internal CLPlatform(nint id) : base(id)
         {
+            string GetStringPlatformInfo(CLPlatformInfo infoType)
+            {
+                var result = GetPlatformInfo(id, infoType, 0, IntPtr.Zero, out var valueSizeRet);
+                CL.CheckResult(result, "Cannot read the size of the info");
+                var array = new byte[valueSizeRet];
+                GCHandle gcHandle = GCHandle.Alloc(array, GCHandleType.Pinned);
+                try {
+                    result = GetPlatformInfo(id, infoType, valueSizeRet, gcHandle.AddrOfPinnedObject(), out valueSizeRet);
+                    CL.CheckResult(result, "Cannot get the info");
+                }
+                finally {
+                    gcHandle.Free();
+                }
+                char[] chars = Encoding.ASCII.GetChars(array, 0, array.Length);
+                string text = new string(chars);
+                char[] trimChars = new char[1];
+                return text.TrimEnd(trimChars);
+            }
             try {
-                Extensions = GetStringInfo(id, PlatformInfo.Extensions, cl.Api.GetPlatformInfo).Split(new[] { ' ', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
+                Extensions = GetStringPlatformInfo(CLPlatformInfo.Extensions).Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             }
             catch (Exception) {
             }
             try {
-                IcdSuffixKhr = GetStringInfo(id, PlatformInfo.IcdSuffixKhr, cl.Api.GetPlatformInfo);
+                IcdSuffixKhr = GetStringPlatformInfo(CLPlatformInfo.IcdSuffixKhr);
             }
             catch (Exception) {
             }
             try {
-                Name = GetStringInfo(id, PlatformInfo.Name, cl.Api.GetPlatformInfo);
+                Name = GetStringPlatformInfo(CLPlatformInfo.Name);
             }
             catch (Exception) {
             }
             try {
-                Profile = GetStringInfo(id, PlatformInfo.Profile, cl.Api.GetPlatformInfo);
+                Profile = GetStringPlatformInfo(CLPlatformInfo.Profile);
             }
             catch (Exception) {
             }
             try {
-                Vendor = GetStringInfo(id, PlatformInfo.Vendor, cl.Api.GetPlatformInfo);
+                Vendor = GetStringPlatformInfo(CLPlatformInfo.Vendor);
             }
             catch (Exception) {
             }
             try {
-                Version = GetStringInfo(id, PlatformInfo.Version, cl.Api.GetPlatformInfo);
+                Version = GetStringPlatformInfo(CLPlatformInfo.Version);
             }
             catch (Exception) {
             }
             var devices = new List<CLDevice>();
-            foreach (var type in new[] { DeviceType.Default, DeviceType.Cpu, DeviceType.Gpu, DeviceType.Accelerator, DeviceType.Custom }) {
-                cl.Api.GetDeviceIDs(id, type, 0, null, out var num_devices);
+            foreach (var type in new[] { CLDeviceType.Default, CLDeviceType.Cpu, CLDeviceType.Gpu, CLDeviceType.Accelerator, CLDeviceType.Custom }) {
+                GetDeviceIDs(id, type, 0, null!, out var num_devices);
                 if (num_devices > 0) {
-                    var ids = stackalloc nint[(int)num_devices];
-                    cl.Api.GetDeviceIDs(id, type, num_devices, ids, &num_devices);
+                    var ids = new nint[num_devices];
+                    GetDeviceIDs(id, type, num_devices, ids, out num_devices);
                     for (var i = 0; i < num_devices; i++)
-                        devices.Add(new CLDevice(this, ids[i], (CLDeviceType)type));
+                        devices.Add(new CLDevice(this, ids[i], type));
                 }
             }
             Devices = devices.ToArray();
@@ -114,6 +132,26 @@ namespace SmartCL
         {
             return Name;
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clGetDeviceIDs")]
+        public static extern CLError GetDeviceIDs(
+            [In] nint platform,
+            [In] CLDeviceType device_type,
+            [In] uint num_entries,
+            [In, Out] nint[] devices,
+            [Out] out uint num_devices);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clGetPlatformInfo")]
+        private static extern CLError GetPlatformInfo(
+            [In] nint platform,
+            [In] CLPlatformInfo param_name,
+            [In] nuint param_value_size,
+            [In] IntPtr param_value,
+            [Out] out nuint param_value_size_ret);
         #endregion
     }
 }

@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading;
-using Silk.NET.OpenCL;
 
 namespace SmartCL
 {
@@ -12,91 +10,113 @@ namespace SmartCL
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
     public class CLProgram : CLObject
     {
-        #region Fields
-        /// <summary>
-        /// The OpenCL context
-        /// </summary>
-        private Lazy<nint> context;
-        /// <summary>
-        /// The program
-        /// </summary>
-        private Lazy<nint> program;
-        /// <summary>
-        /// The commands queue
-        /// </summary>
-        private Lazy<nint> queue;
-        #endregion
         #region Properties
         /// <summary>
         /// The OpenCL context
         /// </summary>
-        public nint Context => context?.Value ?? throw new ObjectDisposedException(nameof(CLProgram));
+        public nint Context { get; private set; }
         /// <summary>
         /// The device
         /// </summary>
-        public CLDevice Device { get; }
+        public CLDevice Device { get; private set; }
         /// <summary>
         /// The commands queue
         /// </summary>
-        public nint Queue => queue?.Value ?? throw new ObjectDisposedException(nameof(CLProgram));
+        public nint Queue { get; private set; }
         /// <summary>
         /// The source code
         /// </summary>
         public string[] SourceCode { get; }
+        #endregion
+        #region Delegates
+        /// <summary>
+        /// A callback function that can be registered by the application to report the <see cref="ComputeProgram"/> build status.
+        /// </summary>
+        /// <param name="program">The program identifier</param>
+        /// <param name="userData">User data specified in the call to the function BuildProgram</param>
+        public delegate void ComputeProgramBuildNotifier(
+            [In] nint program,
+            [In] IntPtr userData);
+        /// <summary>
+        /// Callback function for context creation
+        /// </summary>
+        /// <param name="errorInfo">Error info</param>
+        /// <param name="data">Binary data pointer</param>
+        /// <param name="dataSize">Size of binary data</param>
+        /// <param name="userData">User data specified in the call to the function CreateContext</param>
+        public delegate void CreateContextNotifier(
+            [In, MarshalAs(UnmanagedType.LPStr)] string errorInfo,
+            [In] IntPtr data,
+            [In] IntPtr dataSize,
+            [In] IntPtr userData);
         #endregion
         #region Methods
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="device">The device</param>
+        /// <param name="id">The program identifier</param>
+        /// <param name="context">The context</param>
+        /// <param name="queue">The queue</param>
         /// <param name="sourceCode">The source code of the program</param>
-        internal CLProgram(CLDevice device, string[] sourceCode) : base(device.CL, device.ID)
+        private CLProgram(CLDevice device, nint id, nint context, nint queue, string[] sourceCode) : base(id)
         {
+            Context = context;
             Device = device;
+            Queue = queue;
             SourceCode = sourceCode;
-            context = new(() =>
-            {
-                unsafe {
-                    var props = stackalloc nint[3];
-                    props[0] = (nint)ContextProperties.Platform;
-                    props[1] = Device.Platform.ID;
-                    props[2] = 0;
-                    var deviceId = Device.ID;
-                    static unsafe void NotifyFunc(byte* errinfo, void* privateinfo, nuint cb, void* userdata)
-                    {
-                        Console.WriteLine($"Notification: {Marshal.PtrToStringAnsi((nint)errinfo)}");
-                    }
-                    var context = CL.Api.CreateContext(props, 1, &deviceId, NotifyFunc, null, out var result);
-                    CL.CheckResult(result, "Cannot create the context");
-                    return context;
-                }
-            }, LazyThreadSafetyMode.PublicationOnly);
-            queue = new(() =>
-            {
-                var queue = CL.Api.CreateCommandQueue(Context, Device.ID, CommandQueueProperties.None, out var result);
-                CL.CheckResult(result, "Cannot create the commands queue");
-                return queue;
-
-            }, LazyThreadSafetyMode.PublicationOnly);
-            program = new(() =>
-            {
-                unsafe {
-                    var program = CL.Api.CreateProgramWithSource(Context, (uint)SourceCode.Length, SourceCode, null, out var result);
-                    CL.CheckResult(result, "Cannot create the program");
-                    try {
-                        CL.CheckResult(CL.Api.BuildProgram(program, 0, null, (byte*)null, null, null));
-                    }
-                    catch (Exception ex) {
-                        var logsize = UIntPtr.Zero;
-                        CL.Api.GetProgramBuildInfo(program, Device.ID, ProgramBuildInfo.BuildLog, 0, null, &logsize);
-                        var log = Marshal.AllocHGlobal((nint)logsize.ToPointer());
-                        CL.Api.GetProgramBuildInfo(program, Device.ID, ProgramBuildInfo.BuildLog, logsize, log.ToPointer(), (nuint*)null);
-                        throw new CLException(Marshal.PtrToStringAnsi(log), ex);
-                    }
-                    return program;
-                }
-            }, LazyThreadSafetyMode.PublicationOnly);
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clBuildProgram")]
+        private static extern CLError BuildProgram(
+            [In] nint program,
+            [In] uint num_devices,
+            [In] nint[] device_list,
+            [In, MarshalAs(UnmanagedType.LPStr)] string options,
+            [In] ComputeProgramBuildNotifier pfn_notify,
+            [In] IntPtr user_data);
+        /// <summary>
+        /// Create program
+        /// </summary>
+        /// <param name="device">Destination device</param>
+        /// <param name="sourceCode">Source code</param>
+        /// <returns>The program</returns>
+        internal static CLProgram Create(CLDevice device, string[] sourceCode)
+        {
+            var context = CreateContext(
+                new[] { (nint)CLContextProperties.Platform, device.Platform.ID, 0 },
+                1,
+                new[] { device.ID },
+                null!,
+                IntPtr.Zero,
+                out var result);
+            CL.CheckResult(result, "Cannot create the context");
+            var program = CreateProgramWithSource(context, (uint)sourceCode.Length, sourceCode, null!, out result);
+            CL.CheckResult(result, "Cannot create the program");
+            try {
+                CL.CheckResult(BuildProgram(program, 0, null!, null!, null!, IntPtr.Zero));
+            }
+            catch (Exception ex) {
+                var log = IntPtr.Zero;
+                try {
+                    GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, IntPtr.Zero, IntPtr.Zero, out var logsize);
+                    log = Marshal.AllocHGlobal(logsize);
+                    GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, logsize, log, out var _);
+                    var message = Marshal.PtrToStringAnsi(log);
+                    throw new CLException(message, ex);
+                }
+                finally {
+                    if (log != IntPtr.Zero)
+                        Marshal.FreeHGlobal(log);
+                }
+            }
+            var queue = CreateCommandQueue(context, device.ID, CLCommandQueueProperties.None, out result);
+            CL.CheckResult(result, "Cannot create the commands queue");
+            return new(device, program, context, queue, sourceCode);
+        }
+
         /// <summary>
         /// Create a buffer on the device
         /// </summary>
@@ -104,9 +124,9 @@ namespace SmartCL
         /// <param name="length">Length of buffer</param>
         /// <param name="access">Access type</param>
         /// <returns>The buffer</returns>
-        public CLBuffer<T> CreateBuffer<T>(int length, CLAccess access = CLAccess.ReadWrite) where T : struct
+        public CLBuffer<T> CreateBuffer<T>(int length, CLAccess access = CLAccess.ReadWrite) where T : unmanaged
         {
-            return new CLBuffer<T>(this, length, access);
+            return CLBuffer<T>.Create(this, length, access);
         }
         /// <summary>
         /// Create a buffer from a host array
@@ -115,10 +135,38 @@ namespace SmartCL
         /// <param name="array">User supplied array</param>
         /// <param name="access">Access type</param>
         /// <returns>The buffer</returns>
-        public CLBuffer<T> CreateBuffer<T>(T[] array, CLAccess access = CLAccess.ReadWrite) where T : struct
+        public CLBuffer<T> CreateBuffer<T>(T[] array, CLAccess access = CLAccess.ReadWrite) where T : unmanaged
         {
-            return new CLBuffer<T>(this, array?.Length ?? 0, access, array ?? Array.Empty<T>());
+            return CLBuffer<T>.Create(this, array?.Length ?? 0, access, array!);
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clCreateCommandQueue")]
+        private static extern nint CreateCommandQueue(
+            [In] nint context,
+            [In] nint device,
+            [In] CLCommandQueueProperties properties,
+            [Out] out CLError errcode_ret);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clCreateContext")]
+        private static extern nint CreateContext(
+            [In] nint[] properties,
+            [In] uint num_devices,
+            [In] nint[] devices,
+            [In] CreateContextNotifier pfn_notify,
+            [In] IntPtr user_data,
+            [Out] out CLError errcode_ret);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clCreateKernel")]
+        private static extern nint CreateKernel(
+            [In] nint program,
+            [In, MarshalAs(UnmanagedType.LPStr)] string kernel_name,
+            [Out] out CLError errcode_ret);
         /// <summary>
         /// Create a kernel
         /// </summary>
@@ -575,25 +623,51 @@ namespace SmartCL
             return kernel;
         }
         /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clCreateProgramWithSource")]
+        private static extern nint CreateProgramWithSource(
+            [In] nint context,
+            [In] uint count,
+            [In, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPStr)] string[] strings,
+            [In] IntPtr[] lengths,
+            [Out] out CLError errcode_ret);
+        /// <summary>
         /// Dispose operations
         /// </summary>
         /// <param name="disposing">Programmatically dispose</param>
         protected override void Dispose(bool disposing)
         {
-            if (queue != null) {
-                CL.Api.ReleaseCommandQueue(Queue);
-                queue = null!;
+            if (Queue != 0) {
+                ReleaseCommandQueue(Queue);
+                Queue = 0;
             }
-            if (context != null) {
-                CL.Api.ReleaseContext(Context);
-                context = null!;
+            if (Context != 0) {
+                ReleaseContext(Context);
+                Context = 0;
             }
-            if (program != null) {
-                CL.Api.ReleaseProgram(program.Value);
-                program = null!;
-            }
+            if (ID != 0)
+                ReleaseProgram(ID);
             base.Dispose(disposing);
         }
+        /// <summary>
+        /// Get build information
+        /// </summary>
+        /// <param name="program">Specifies the program object being queried.</param>
+        /// <param name="device">Specifies the device for which build information is being queried. device must be a valid device associated with program</param>
+        /// <param name="param_name">Specifies the information to query</param>
+        /// <param name="param_value_size">Specifies the size in bytes of memory pointed to by param_value</param>
+        /// <param name="param_value">A pointer to memory where the appropriate result being queried is returned. If param_value is IntPtr.Zero, it is ignored</param>
+        /// <param name="param_value_size_ret">Returns the actual size in bytes of data copied to param_value. If param_value_size_ret is IntPtr.Zero, it is ignored</param>
+        /// <returns></returns>
+        [DllImport("OpenCL", EntryPoint = "clGetProgramBuildInfo")]
+        private static extern CLError GetProgramBuildInfo(
+            [In] nint program,
+            [In] nint device,
+            [In] CLProgramBuildInfo param_name,
+            [In] IntPtr param_value_size,
+            [In] IntPtr param_value,
+            [Out] out IntPtr param_value_size_ret);
         /// <summary>
         /// Initialize the program and return a kernel id
         /// </summary>
@@ -602,9 +676,9 @@ namespace SmartCL
         /// <exception cref="CLException">Exception</exception>
         private nint GetKernel(string name)
         {
-            if (program == null)
+            if (ID == 0)
                 throw new ObjectDisposedException(nameof(CLProgram));
-            var kernelID = CL.Api.CreateKernel(program.Value, name, out var result);
+            var kernelID = CreateKernel(ID, name, out var result);
             CL.CheckResult(result, $"Cannot create the kernel {name}");
             return kernelID;
         }
@@ -616,6 +690,21 @@ namespace SmartCL
         {
             return string.Join(Environment.NewLine, SourceCode);
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clReleaseCommandQueue")]
+        private static extern CLError ReleaseCommandQueue([In] nint command_queue);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clReleaseContext")]
+        private static extern CLError ReleaseContext([In] nint context);
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clReleaseProgram")]
+        private static extern CLError ReleaseProgram([In] nint program);
         #endregion
     }
 }

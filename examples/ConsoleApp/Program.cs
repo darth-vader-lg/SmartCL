@@ -27,12 +27,12 @@ using var program = device.CreateProgram(new[]
 
 // Test kernel call with defined delegate
 using var kernel1 = program.CreateKernel("multiply_by", out KernelFunction multiply_by, a.AsCLArg(), c.AsCLArg());
-kernel1.Dims = new(a.Length);
+kernel1.GlobalSizes = new[] { a.Length };
 multiply_by(a, 2);
 
 // Test kernel call with standard delegate
 using var kernel2 = program.CreateKernel("multiply_by", a.AsCLArg(), c.AsCLArg());
-kernel2.Dims = new(a.Length);
+kernel2.GlobalSizes = new[] { a.Length };
 kernel2.Call(a, 2);
 
 // Check the result
@@ -48,27 +48,25 @@ using var program1 = device.CreateProgram(new[]
 
 // Create the kernel and a device buffer
 using var fillDevice = program1.CreateKernel("fill", program1.CreateBuffer<int>(a.Length, CLAccess.ReadOnly).AsCLArg());
-fillDevice.Dims = new(a.Length);
+fillDevice.GlobalSizes = new[] { a.Length };
 // Fill the buffer
 fillDevice.Invoke();
 
 // Check the result mapping the buffer for reading
 using (var map = fillDevice.Arg0.MapRead()) {
-    var mapResult = map.Span.ToArray();
-    Debug.Assert(mapResult[^1] == mapResult.Length - 1);
+    Debug.Assert(map[a.Length - 1] == a.Length - 1);
 }
 
 // Create the kernel and a host buffer
 var hostBuf = new int[a.Length];
 using var fillHost = program1.CreateKernel("fill", program1.CreateBuffer<int>(hostBuf, CLAccess.ReadOnly).AsCLArg());
-fillHost.Dims = new(a.Length);
+fillHost.GlobalSizes = new[] { a.Length };
 // Fill the buffer
 fillHost.Invoke();
 
 // Check the result mapping the buffer for reading
 using (var map = fillHost.Arg0.MapRead()) {
-    var mapResult = map.Span.ToArray();
-    Debug.Assert(mapResult[^1] == mapResult.Length - 1);
+    Debug.Assert(map[a.Length - 1] == a.Length - 1);
 }
 
 
