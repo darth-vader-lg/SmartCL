@@ -18,7 +18,7 @@ namespace GenericTests
             {
                 var devices = CL.Platforms
                     .SelectMany(p => p.Devices
-                    .Where(d => d.DeviceType == CLDeviceType.Gpu || d.DeviceType == CLDeviceType.Cpu));
+                    .Where(d => d.DeviceType == CLDeviceType.GPU || d.DeviceType == CLDeviceType.CPU));
                 foreach (var device in devices)
                     yield return new object[] { device.DeviceType.ToString(), device.Platform.Name, device.Platform.Vendor };
             }
@@ -184,7 +184,13 @@ namespace GenericTests
         public void Invoke(string deviceType, string platform, string vendor)
         {
             // Find the testing device
-            var device = CL.Platforms.Where(p => p.Name == platform && p.Vendor == vendor).First().Devices.Where(d => d.DeviceType.ToString() == deviceType).First();
+            var device =
+                CL.Platforms
+                .Where(p => p.Name == platform && p.Vendor == vendor)
+                .First()
+                .Devices
+                .Where(d => d.DeviceType.ToString() == deviceType)
+                .First();
             // Describe the device
             WriteLine($"Testing device {device.DeviceType} on platform {device.Platform.Name}");
             WriteLine("Platform info:");
@@ -195,8 +201,10 @@ namespace GenericTests
             WriteLine($"Extensions:");
             foreach (var ext in device.Platform.Extensions)
                 WriteLine($"- {ext}");
+            // Create the OpenCL context
+            using var context = device.CreateContext();
             // Create the OpenCL program
-            using var program = device.CreateProgram(clCode);
+            context.CreateProgram(clCode);
             // Argument types
             var rd = CL.Array<int>(CLAccess.ReadOnly);
             var wr = CL.Array<int>(CLAccess.WriteOnly);
@@ -206,7 +214,7 @@ namespace GenericTests
             // Simulate the result
             var result0 = arg0.Select(value => value + valueAdd).ToArray();
             // Call the kernel and check the result
-            using (var main0 = program.CreateKernel("main0", arg0.AsCLArg())) {
+            using (var main0 = context.DefaultDevice.CreateKernel("main0", arg0.AsCLArg())) {
                 main0.GlobalSizes = new[] { size };
                 main0.Call(arg0);
                 Assert.True(arg0.Zip(result0).All(item => item.First == item.Second));
@@ -215,7 +223,7 @@ namespace GenericTests
             var arg1 = Enumerable.Range(0, size).Select(i => i).ToArray();
             var result1 = arg1.Select(value => value + valueAdd).ToArray();
             // Call the kernel and check the result
-            using (var main1 = program.CreateKernel("main1", valueAdd.AsCLArg(), arg1.AsCLArg())) {
+            using (var main1 = context.DefaultDevice.CreateKernel("main1", valueAdd.AsCLArg(), arg1.AsCLArg())) {
                 main1.GlobalSizes = new[] { size };
                 main1.Call(valueAdd, arg1);
                 Assert.True(arg1.Zip(result1).All(item => item.First == item.Second));
@@ -227,7 +235,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main2 = program.CreateKernel("main2", clInt, wr, rd)) {
+            using (var main2 = context.DefaultDevice.CreateKernel("main2", clInt, wr, rd)) {
                 main2.GlobalSizes = new[] { size };
                 main2.Call(valueAdd, arg1, arg2);
                 Assert.True(arg2.Zip(result2).All(item => item.First == item.Second));
@@ -241,7 +249,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main3 = program.CreateKernel("main3", clInt, wr, wr, rd)) {
+            using (var main3 = context.DefaultDevice.CreateKernel("main3", clInt, wr, wr, rd)) {
                 main3.GlobalSizes = new[] { size };
                 main3.Call(valueAdd, arg1, arg2, arg3);
                 Assert.True(arg3.Zip(result3).All(item => item.First == item.Second));
@@ -257,7 +265,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main4 = program.CreateKernel("main4", clInt, wr, wr, wr, rd)) {
+            using (var main4 = context.DefaultDevice.CreateKernel("main4", clInt, wr, wr, wr, rd)) {
                 main4.GlobalSizes = new[] { size };
                 main4.Call(valueAdd, arg1, arg2, arg3, arg4);
                 Assert.True(arg4.Zip(result4).All(item => item.First == item.Second));
@@ -275,7 +283,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main5 = program.CreateKernel("main5", clInt, wr, wr, wr, wr, rd)) {
+            using (var main5 = context.DefaultDevice.CreateKernel("main5", clInt, wr, wr, wr, wr, rd)) {
                 main5.GlobalSizes = new[] { size };
                 main5.Call(valueAdd, arg1, arg2, arg3, arg4, arg5);
                 Assert.True(arg5.Zip(result5).All(item => item.First == item.Second));
@@ -295,7 +303,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main6 = program.CreateKernel("main6", clInt, wr, wr, wr, wr, wr, rd)) {
+            using (var main6 = context.DefaultDevice.CreateKernel("main6", clInt, wr, wr, wr, wr, wr, rd)) {
                 main6.GlobalSizes = new[] { size };
                 main6.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6);
                 Assert.True(arg6.Zip(result6).All(item => item.First == item.Second));
@@ -317,7 +325,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main7 = program.CreateKernel("main7", clInt, wr, wr, wr, wr, wr, wr, rd)) {
+            using (var main7 = context.DefaultDevice.CreateKernel("main7", clInt, wr, wr, wr, wr, wr, wr, rd)) {
                 main7.GlobalSizes = new[] { size };
                 main7.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
                 Assert.True(arg7.Zip(result7).All(item => item.First == item.Second));
@@ -341,7 +349,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main8 = program.CreateKernel("main8", clInt, wr, wr, wr, wr, wr, wr, wr, rd)) {
+            using (var main8 = context.DefaultDevice.CreateKernel("main8", clInt, wr, wr, wr, wr, wr, wr, wr, rd)) {
                 main8.GlobalSizes = new[] { size };
                 main8.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
                 Assert.True(arg8.Zip(result8).All(item => item.First == item.Second));
@@ -367,7 +375,7 @@ namespace GenericTests
                 .Select(value => value.First + value.Second + valueAdd)
                 .ToArray();
             // Call the kernel and check the result
-            using (var main9 = program.CreateKernel("main9", clInt, wr, wr, wr, wr, wr, wr, wr, wr, rd)) {
+            using (var main9 = context.DefaultDevice.CreateKernel("main9", clInt, wr, wr, wr, wr, wr, wr, wr, wr, rd)) {
                 main9.GlobalSizes = new[] { size };
                 main9.Call(valueAdd, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
                 Assert.True(arg9.Zip(result9).All(item => item.First == item.Second));

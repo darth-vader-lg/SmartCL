@@ -10,8 +10,8 @@ namespace SmartCL
     {
         None = 0x0uL,
         Default = 0x1uL,
-        Cpu = 0x2uL,
-        Gpu = 0x4uL,
+        CPU = 0x2uL,
+        GPU = 0x4uL,
         Accelerator = 0x8uL,
         All = 0xFFFFFFFFuL,
         Custom = 0x10uL

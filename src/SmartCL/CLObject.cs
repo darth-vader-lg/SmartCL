@@ -1,12 +1,11 @@
-﻿using System;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 
 namespace SmartCL
 {
     /// <summary>
     /// Represent the base for OpenCL objects
     /// </summary>
-    public abstract class CLObject : IDisposable
+    public abstract class CLObject
     {
         #region Fields
         /// <summary>
@@ -19,6 +18,12 @@ namespace SmartCL
             private set;
         }
         #endregion
+        #region Properties
+        /// <summary>
+        /// Valid object flag
+        /// </summary>
+        public bool Valid => ID != 0;
+        #endregion
         #region Methods
         /// <summary>
         /// Constructor
@@ -29,28 +34,10 @@ namespace SmartCL
             ID = id;
         }
         /// <summary>
-        /// Finalizer
+        /// Invalidate the object
         /// </summary>
-        ~CLObject()
+        protected virtual void InvalidateObject()
         {
-            Dispose(disposing: false);
-        }
-        /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
-        /// <summary>
-        /// Dispose operations
-        /// </summary>
-        /// <param name="disposing">Programmatically disposing</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (ID == 0)
-                return;
             ID = 0;
         }
         #endregion

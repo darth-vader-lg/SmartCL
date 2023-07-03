@@ -14,11 +14,12 @@ for (var i = 0; i < a.Length; i++) {
     b[i] = i * c * 2;
 }
 
-// Get the first GPU device
-var device = CL.GetFirstGpuOrDefault();
+// Context and device
+if (CL.DefaultDevice is var device && device is null)
+    throw new Exception("Cannot find a default device");
 
 // Create a program running on GPU
-using var program = device.CreateProgram(new[]
+device.Context.CreateProgram(new[]
 {
     "__kernel void multiply_by(__global int* A, const int c) {",
     "   A[get_global_id(0)] = c * A[get_global_id(0)];",
@@ -26,12 +27,12 @@ using var program = device.CreateProgram(new[]
 });
 
 // Test kernel call with defined delegate
-using var kernel1 = program.CreateKernel("multiply_by", out KernelFunction multiply_by, a.AsCLArg(), c.AsCLArg());
+using var kernel1 = device.CreateKernel("multiply_by", out KernelFunction multiply_by, a.AsCLArg(), c.AsCLArg());
 kernel1.GlobalSizes = new[] { a.Length };
 multiply_by(a, 2);
 
 // Test kernel call with standard delegate
-using var kernel2 = program.CreateKernel("multiply_by", a.AsCLArg(), c.AsCLArg());
+using var kernel2 = device.CreateKernel("multiply_by", a.AsCLArg(), c.AsCLArg());
 kernel2.GlobalSizes = new[] { a.Length };
 kernel2.Call(a, 2);
 
@@ -39,7 +40,7 @@ kernel2.Call(a, 2);
 Debug.Assert(a.Zip(b).All(item => item.First == item.Second));
 
 // Create a program which fill an OpenCL direct access buffer
-using var program1 = device.CreateProgram(new[]
+device.Context.CreateProgram(new[]
 {
     "__kernel void fill(__global int* buffer) {",
     "   buffer[get_global_id(0)] = get_global_id(0);",
@@ -47,25 +48,25 @@ using var program1 = device.CreateProgram(new[]
 });
 
 // Create the kernel and a device buffer
-using var fillDevice = program1.CreateKernel("fill", program1.CreateBuffer<int>(a.Length, CLAccess.ReadOnly).AsCLArg());
+using var fillDevice = device.CreateKernel("fill", device.Context.CreateBuffer<int>(a.Length, CLAccess.ReadOnly).AsCLArg());
 fillDevice.GlobalSizes = new[] { a.Length };
 // Fill the buffer
 fillDevice.Invoke();
 
 // Check the result mapping the buffer for reading
-using (var map = fillDevice.Arg0.MapRead()) {
+using (var map = fillDevice.MapRead(fillDevice.Arg0)) {
     Debug.Assert(map[a.Length - 1] == a.Length - 1);
 }
 
 // Create the kernel and a host buffer
 var hostBuf = new int[a.Length];
-using var fillHost = program1.CreateKernel("fill", program1.CreateBuffer<int>(hostBuf, CLAccess.ReadOnly).AsCLArg());
+using var fillHost = device.CreateKernel("fill", device.Context.CreateBuffer<int>(hostBuf, CLAccess.ReadOnly).AsCLArg());
 fillHost.GlobalSizes = new[] { a.Length };
 // Fill the buffer
 fillHost.Invoke();
 
 // Check the result mapping the buffer for reading
-using (var map = fillHost.Arg0.MapRead()) {
+using (var map = fillHost.MapRead(fillHost.Arg0)) {
     Debug.Assert(map[a.Length - 1] == a.Length - 1);
 }
 

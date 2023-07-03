@@ -6,7 +6,7 @@ namespace SmartCL
     /// Command queue properties identifiers
     /// </summary>
     [Flags]
-    internal enum CLCommandQueueProperties : ulong
+    internal enum CLQueueProperties : ulong
     {
         None = 0x0uL,
         OutOfOrderExecModeEnable = 0x1uL,

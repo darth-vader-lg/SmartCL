@@ -58,6 +58,8 @@ namespace SmartCL
             if (type.IsArray) {
                 if (type.GetElementType().IsArray || !type.GetElementType().IsValueType)
                     throw new ArgumentException("A CL type array can only be a single dimension array of value types");
+                if (type.GetArrayRank() != 1)
+                    throw new ArgumentException("A CL type array can have only rank 1");
             }
             else if (!type.IsValueType && (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(CLBuffer<>).GetGenericTypeDefinition()))
                 throw new ArgumentException("A CL type can only be a value type");

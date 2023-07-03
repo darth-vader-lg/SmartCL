@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 
 namespace SmartCL
 {
@@ -12,11 +13,11 @@ namespace SmartCL
         /// <summary>
         /// The type of the device
         /// </summary>
-        public CLDeviceType DeviceType { get; }
+        public CLDeviceType DeviceType { get; private set; }
         /// <summary>
         /// The platform
         /// </summary>
-        public CLPlatform Platform { get; }
+        public CLPlatform Platform { get; private set; }
         #endregion
         #region Methods
         /// <summary>
@@ -27,19 +28,14 @@ namespace SmartCL
         /// <param name="deviceType">The type of the device</param>
         internal CLDevice(CLPlatform platform, nint id, CLDeviceType deviceType) : base(id)
         {
-            Platform = platform;
+            Platform = platform ?? throw new ArgumentNullException(nameof(platform));
             DeviceType = deviceType;
         }
         /// <summary>
-        /// Create a program
+        /// Create a context
         /// </summary>
-        /// <typeparam name="T">Type of the delegate</typeparam>
-        /// <param name="sourceCode">The source code with kernels</param>
-        /// <returns>The program</returns>
-        public CLProgram CreateProgram(string[] sourceCode)
-        {
-            return CLProgram.Create(this, sourceCode);
-        }
+        /// <returns>The created context</returns>
+        public CLDisposableContext CreateContext() => CLDisposableContext.Create(new(new[] { this }));
         /// <summary>
         /// Debugger visualization
         /// </summary>
@@ -47,6 +43,19 @@ namespace SmartCL
         private string GetDebuggerDisplay()
         {
             return DeviceType.ToString();
+        }
+        /// <summary>
+        /// Invalidate the object
+        /// </summary>
+        protected override void InvalidateObject()
+        {
+            try {
+                base.InvalidateObject();
+            }
+            catch (Exception) {
+            }
+            DeviceType = CLDeviceType.None;
+            Platform = null!;
         }
         #endregion
     }

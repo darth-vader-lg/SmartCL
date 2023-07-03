@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -10,17 +11,25 @@ namespace SmartCL
     /// The class that represents a platform
     /// </summary>
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
-    public class CLPlatform : CLObject
+    public sealed class CLPlatform : CLObject
     {
         #region Properties
         /// <summary>
+        /// CPUs set
+        /// </summary>
+        public CLDevicesGroup CPUs { get; private set; }
+        /// <summary>
         /// Platform's devices
         /// </summary>
-        public CLDevice[] Devices { get; private set; }
+        public CLDevicesGroup Devices { get; private set; }
         /// <summary>
         /// Platform's extensions
         /// </summary>
         public string[] Extensions { get; } = Array.Empty<string>();
+        /// <summary>
+        /// GPUs set
+        /// </summary>
+        public CLDevicesGroup GPUs { get; private set; }
         /// <summary>
         /// Platform's Khronos suffix
         /// </summary>
@@ -52,12 +61,12 @@ namespace SmartCL
             string GetStringPlatformInfo(CLPlatformInfo infoType)
             {
                 var result = GetPlatformInfo(id, infoType, 0, IntPtr.Zero, out var valueSizeRet);
-                CL.CheckResult(result, "Cannot read the size of the info");
+                CL.Assert(result, "Cannot read the size of the info");
                 var array = new byte[valueSizeRet];
                 GCHandle gcHandle = GCHandle.Alloc(array, GCHandleType.Pinned);
                 try {
                     result = GetPlatformInfo(id, infoType, valueSizeRet, gcHandle.AddrOfPinnedObject(), out valueSizeRet);
-                    CL.CheckResult(result, "Cannot get the info");
+                    CL.Assert(result, "Cannot get the info");
                 }
                 finally {
                     gcHandle.Free();
@@ -98,7 +107,7 @@ namespace SmartCL
             catch (Exception) {
             }
             var devices = new List<CLDevice>();
-            foreach (var type in new[] { CLDeviceType.Default, CLDeviceType.Cpu, CLDeviceType.Gpu, CLDeviceType.Accelerator, CLDeviceType.Custom }) {
+            foreach (var type in new[] { CLDeviceType.Default, CLDeviceType.CPU, CLDeviceType.GPU, CLDeviceType.Accelerator, CLDeviceType.Custom }) {
                 GetDeviceIDs(id, type, 0, null!, out var num_devices);
                 if (num_devices > 0) {
                     var ids = new nint[num_devices];
@@ -107,22 +116,9 @@ namespace SmartCL
                         devices.Add(new CLDevice(this, ids[i], type));
                 }
             }
-            Devices = devices.ToArray();
-        }
-        /// <summary>
-        /// Dispose operations
-        /// </summary>
-        /// <param name="disposing">Programmatically dispose</param>
-        protected override void Dispose(bool disposing)
-        {
-            if (ID == 0)
-                return;
-            if (disposing) {
-                foreach (var device in Devices)
-                    device.Dispose();
-            }
-            Devices = null!;
-            base.Dispose(disposing);
+            Devices = new(devices);
+            CPUs = new(Devices.Where(d => d.DeviceType == CLDeviceType.CPU));
+            GPUs = new(Devices.Where(d => d.DeviceType == CLDeviceType.GPU));
         }
         /// <summary>
         /// Debugger view

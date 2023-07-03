@@ -1,7 +1,7 @@
 ﻿namespace SmartCL
 {
     /// <summary>
-    /// Platform info idendifiers
+    /// Platform info identifiers
     /// </summary>
     internal enum CLPlatformInfo
     {

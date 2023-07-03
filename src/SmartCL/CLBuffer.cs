@@ -8,7 +8,7 @@ namespace SmartCL
     /// <summary>
     /// OpenCL buffer base class bindings
     /// </summary>
-    public abstract class CLBuffer : CLObject
+    public abstract class CLBuffer : CLObject, IDisposable
     {
         #region Fields
         /// <summary>
@@ -30,25 +30,40 @@ namespace SmartCL
             get;
         }
         /// <summary>
-        /// Owner program
+        /// Owner context
         /// </summary>
-        public CLProgram Program { get; }
+        public CLContext Context { get; private set; }
         #endregion
         #region Methods
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="program">Owner program</param>
+        /// <param name="context">Owner context</param>
         /// <param name="id">The ID of the object</param>
         /// <param name="access">Access type</param>
         /// <param name="size">Size of the buffer in bytes</param>
         /// <param name="length">Length of buffer (elements count)</param>
-        protected CLBuffer(CLProgram program, nint id, CLAccess access, nuint size, int length) : base(id)
+        protected CLBuffer(CLContext context, nint id, CLAccess access, nuint size, int length) : base(id)
         {
+            if (length < 0)
+                throw new ArgumentOutOfRangeException(nameof(length), "Buffer length must be >= 0");
+            if (size < 0)
+                throw new ArgumentOutOfRangeException(nameof(size), "Buffer size must be >= 0");
             Access = access;
             Length = length;
-            Program = program;
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            if (!context.Valid)
+                throw new CLException(CLError.InvalidContext);
+            Context = context;
             this.size = size;
+        }
+        /// <summary>
+        /// Finalizer
+        /// </summary>
+        ~CLBuffer()
+        {
+            Dispose(disposing: false);
         }
         /// <summary>
         /// See the OpenCL specification.
@@ -61,43 +76,26 @@ namespace SmartCL
             [In] IntPtr host_ptr,
             [Out] out CLError errcode_ret);
         /// <summary>
-        /// See the OpenCL specification.
+        /// Dispose
         /// </summary>
-        [DllImport("OpenCL", EntryPoint = "clEnqueueReadBuffer")]
-        private static extern CLError EnqueueReadBuffer(
-            [In] nint command_queue,
-            [In] nint buffer,
-            [In, MarshalAs(UnmanagedType.Bool)] bool blocking_read,
-            [In] nuint offset,
-            [In] nuint cb,
-            [In] IntPtr ptr,
-            [In] uint num_events_in_wait_list,
-            [In] nint[] event_wait_list,
-            [In, Out] ref nint new_event);
-        /// <summary>
-        /// See the OpenCL specification.
-        /// </summary>
-        [DllImport("OpenCL", EntryPoint = "clEnqueueWriteBuffer")]
-        private static extern CLError EnqueueWriteBuffer(
-            [In] nint command_queue,
-            [In] nint buffer,
-            [In, MarshalAs(UnmanagedType.Bool)] bool blocking_write,
-            [In] nuint offset,
-            [In] nuint cb,
-            [In] IntPtr ptr,
-            [In] uint num_events_in_wait_list,
-            [In] nint[] event_wait_list,
-            [In, Out] ref nint new_event);
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
         /// <summary>
         /// Dispose operations
         /// </summary>
         /// <param name="disposing">Programmatically dispose</param>
-        protected override void Dispose(bool disposing)
+        protected virtual void Dispose(bool disposing)
         {
-            if (ID == 0)
-                return;
-            ReleaseMemObject(ID);
-            base.Dispose(disposing);
+            try {
+                if (Valid)
+                    ReleaseMemObject(ID);
+            }
+            catch { }
+            Context = null!;
+            InvalidateObject();
         }
         /// <summary>
         /// Enqueue a buffer mapping
@@ -126,26 +124,6 @@ namespace SmartCL
             [In, Out] ref nint @event,
             [Out] out CLError errCodeRet);
         /// <summary>
-        /// Generic buffer read method
-        /// </summary>
-        /// <param name="offset">Offset in the buffer</param>
-        /// <param name="size">Total buffer's size</param>
-        /// <param name="array">Array of elements</param>
-        /// <returns>Error code</returns>
-        internal CLError EnqueueReadBuffer(nuint offset, nuint size, object array)
-        {
-            Debug.Assert(array != null);
-            Debug.Assert(array == null || array.GetType().IsArray);
-            Debug.Assert(array == null || array.GetType().GetArrayRank() == 1);
-            var h = GCHandle.Alloc(array, GCHandleType.Pinned);
-            try {
-                return EnqueueReadBuffer(Program.Queue, ID, true, offset, size, h.AddrOfPinnedObject(), 0, null!, ref Unsafe.NullRef<nint>());
-            }
-            finally {
-                h.Free();
-            }
-        }
-        /// <summary>
         /// Enqueue a memory object unmapping
         /// </summary>
         /// <param name="commandQueue"></param>
@@ -164,26 +142,6 @@ namespace SmartCL
             [In] nint[] eventWaitList,
             [In, Out] ref nint @event);
         /// <summary>
-        /// Generic buffer write method
-        /// </summary>
-        /// <param name="offset">Offset in the buffer</param>
-        /// <param name="size">Total buffer's size</param>
-        /// <param name="array">Array of elements</param>
-        /// <returns>Error code</returns>
-        internal CLError EnqueueWriteBuffer(nuint offset, nuint size, object array)
-        {
-            Debug.Assert(array != null);
-            Debug.Assert(array == null || array.GetType().IsArray);
-            Debug.Assert(array == null || array.GetType().GetArrayRank() == 1);
-            var h = GCHandle.Alloc(array, GCHandleType.Pinned);
-            try {
-                return EnqueueWriteBuffer(Program.Queue, ID, true, offset, size, h.AddrOfPinnedObject(), 0, null!, ref Unsafe.NullRef<nint>());
-            }
-            finally {
-                h.Free();
-            }
-        }
-        /// <summary>
         /// See the OpenCL specification.
         /// </summary>
         [DllImport("OpenCL", EntryPoint = "clReleaseMemObject")]
@@ -194,7 +152,8 @@ namespace SmartCL
     /// <summary>
     /// OpenCL generic buffer
     /// </summary>
-    public partial class CLBuffer<T> : CLBuffer where T : unmanaged
+    [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
+    public sealed class CLBuffer<T> : CLBuffer where T : struct
     {
         #region Fields
         /// <summary>
@@ -206,27 +165,29 @@ namespace SmartCL
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="program">Owner program</param>
+        /// <param name="context">Owner context</param>
         /// <param name="id">Id of the buffer</param>
         /// <param name="itemSize">Size of each element in the buffer</param>
         /// <param name="length">Length of buffer</param>
         /// <param name="access">Access type</param>
         /// <param name="hostArrayhandle">Host supplied array handle</param>
-        private CLBuffer(CLProgram program, nint id, int itemSize, int length, CLAccess access, GCHandle hostArrayhandle) :
-            base(program, id, access, (nuint)(itemSize * length), length)
+        private CLBuffer(CLContext context, nint id, int itemSize, int length, CLAccess access, GCHandle hostArrayhandle) :
+            base(context, id, access, (nuint)(itemSize * length), length)
         {
             hostArrayHandle = hostArrayhandle;
         }
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="program">Owner program</param>
+        /// <param name="context">Owner context</param>
         /// <param name="length">Length of buffer</param>
         /// <param name="access">Access type</param>
         /// <param name="hostArray">Host supplied array</param>
-        internal static CLBuffer<T> Create(CLProgram program, int length, CLAccess access, T[] hostArray = null!)
+        internal static CLBuffer<T> Create(CLContext context, int length, CLAccess access, T[] hostArray = null!)
         {
-            return new CLBuffer<T>(program, GetId(program, length, access, hostArray, out var handle), Unsafe.SizeOf<T>(), length, access, handle);
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            return new CLBuffer<T>(context, GetId(context, length, access, hostArray, out var handle), Unsafe.SizeOf<T>(), length, access, handle);
         }
         /// <summary>
         /// Dispose operations
@@ -234,71 +195,61 @@ namespace SmartCL
         /// <param name="disposing">Programmatically dispose</param>
         protected override void Dispose(bool disposing)
         {
-            if (hostArrayHandle.IsAllocated)
-                hostArrayHandle.Free();
+            try {
+                if (hostArrayHandle.IsAllocated)
+                    hostArrayHandle.Free();
+            }
+            catch (Exception) {
+            }
             base.Dispose(disposing);
+        }
+        /// <summary>
+        /// Debug display
+        /// </summary>
+        /// <returns>The human readable string</returns>
+        private string GetDebuggerDisplay()
+        {
+            return $"{typeof(T)}[{Length}] (size in bytes={size}{(hostArrayHandle.IsAllocated ? ", host" : "")})";
         }
         /// <summary>
         /// Create the buffer and return the ID
         /// </summary>
-        /// <param name="program">Owner program</param>
+        /// <param name="context">Owner context</param>
         /// <param name="length">Length of buffer</param>
         /// <param name="access">Access type</param>
         /// <param name="hostArray">User supplied array or null for device allocated memory</param>
         /// <returns>The buffer ID</returns>
         /// <exception cref="CLException"></exception>
-        private static nint GetId(CLProgram program, int length, CLAccess access, T[] hostArray, out GCHandle hostArrayHandle)
+        private static nint GetId(CLContext context, int length, CLAccess access, T[] hostArray, out GCHandle hostArrayHandle)
         {
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            if (!context.Valid)
+                throw new CLException(CLError.InvalidContext);
+            if (length < 0)
+                throw new ArgumentOutOfRangeException(nameof(length), "Buffer length must be >= 0");
             var memFlags = access switch
             {
                 CLAccess.Const => CLMemFlags.ReadOnly,
                 CLAccess.WriteOnly => CLMemFlags.ReadOnly,
                 CLAccess.ReadOnly => CLMemFlags.WriteOnly,
                 CLAccess.ReadWrite => CLMemFlags.ReadWrite,
-                _ => throw new CLException($"Invalid access type {access}"),
+                _ => throw new ArgumentException($"Invalid access type {access}"),
             };
-            if (hostArray == null)
+            if (hostArray == null) {
                 memFlags |= CLMemFlags.AllocHostPtr;
-            hostArrayHandle = GCHandle.Alloc(hostArray, GCHandleType.Pinned);
+                hostArrayHandle = default;
+            }
+            else
+                hostArrayHandle = GCHandle.Alloc(hostArray, GCHandleType.Pinned);
             var id = CreateBuffer(
-                program.Context,
+                context.ID,
                 memFlags,
                 (nuint)(Unsafe.SizeOf<T>() * length),
-                hostArrayHandle.AddrOfPinnedObject(),
+                hostArrayHandle.IsAllocated ? hostArrayHandle.AddrOfPinnedObject() : IntPtr.Zero,
                 out var result);
-            CL.CheckResult(result, "Cannot create the buffer");
+            CL.Assert(result, "Cannot create the buffer");
             return id;
-        }
-        /// <summary>
-        /// Map the buffer
-        /// </summary>
-        /// <param name="access">Access type</param>
-        /// <param name="start">Start index in the buffer</param>
-        /// <param name="length">Length of the map. whole buffer if < 0</param>
-        /// <returns>The map of the buffer</returns>
-        public Mapping Map(CLAccess access = CLAccess.ReadWrite, int start = 0, int length = -1)
-        {
-            return new(this, access, start, length >= 0 ? length : Length - start);
-        }
-        /// <summary>
-        /// Map the buffer to read it
-        /// </summary>
-        /// <param name="start">Start index in the buffer</param>
-        /// <param name="length">Length of the map. whole buffer if < 0</param>
-        /// <returns>The map of the buffer</returns>
-        public Mapping MapRead(int start = 0, int length = -1)
-        {
-            return Map(CLAccess.ReadOnly, start, length);
-        }
-        /// <summary>
-        /// Map the buffer to write it
-        /// </summary>
-        /// <param name="start">Start index in the buffer</param>
-        /// <param name="length">Length of the map. whole buffer if < 0</param>
-        /// <returns>The map of the buffer</returns>
-        public Mapping MapWrite(int start = 0, int length = -1)
-        {
-            return Map(CLAccess.WriteOnly, start, length);
         }
         #endregion
     }
