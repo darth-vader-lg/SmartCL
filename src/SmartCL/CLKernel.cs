@@ -135,6 +135,10 @@ namespace SmartCL
             Device = null!;
         }
         /// <summary>
+        /// Execute the kernel
+        /// </summary>
+        public abstract void Invoke();
+        /// <summary>
         /// Map a buffer
         /// </summary>
         /// <param name="buffer">The buffer</param>
@@ -268,7 +272,7 @@ namespace SmartCL
                 validations = new bool[this.args.Length];
                 // Create the delegate for kernel invocation
                 var invoke = GetType().GetMethod("InternalInvoke", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                Call = (TDelegate)invoke.CreateDelegate(typeof(TDelegate), this);
+                Call = invoke != null ? (TDelegate)invoke.CreateDelegate(typeof(TDelegate), this) : null!;
                 // Create actions for writing 
                 for (var i = 0; i < args.Length; i++) {
                     // Current argument
@@ -496,7 +500,7 @@ namespace SmartCL
         /// <summary>
         /// Execute the kernel
         /// </summary>
-        public void Invoke()
+        public override void Invoke()
         {
             // Set kernel arguments
             if (!Valid)

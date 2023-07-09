@@ -11,12 +11,20 @@ var c = 2;
 // Prepare the buffers
 for (var i = 0; i < a.Length; i++) {
     a[i] = i;
-    b[i] = i * c * 2;
+    b[i] = i * (int)Math.Pow(c, 3) /* three calls before the check */;
 }
 
 // Context and device
 if (CL.DefaultDevice is var device && device is null)
     throw new Exception("Cannot find a default device");
+
+// Quick operation on an array
+a.ExecuteOnDevice(device, new[]
+{
+    "__kernel void main(__global int* A, const int c) {",
+    "   A[get_global_id(0)] = c * A[get_global_id(0)];",
+    "}"
+}, 2);
 
 // Create a program running on GPU
 device.Context.CreateProgram(new[]
