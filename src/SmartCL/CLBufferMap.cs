@@ -45,7 +45,9 @@ namespace SmartCL
         /// <returns>A reference to te item</returns>
         public readonly ref T this[int index]
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            // Probable compiler bug.
+            // It causes NullReferenceException if compiled without this attribute in release mode.
+            [MethodImpl(MethodImplOptions.NoInlining)]
             get
             {
                 if (index < 0 || index > Length)
