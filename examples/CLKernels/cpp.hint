@@ -1,0 +1,3 @@
+#define kernel
+#define global
+#define local
