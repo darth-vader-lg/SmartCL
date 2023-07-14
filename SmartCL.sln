@@ -30,6 +30,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Common.Tests", "test\Common
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CLKernels", "examples\CLKernels\CLKernels.vcxproj", "{797276D0-39B5-4A2A-9F64-5CBB566BE56D}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CLProgram", "examples\CLProgram\CLProgram.csproj", "{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244}"
+	ProjectSection(ProjectDependencies) = postProject
+		{797276D0-39B5-4A2A-9F64-5CBB566BE56D} = {797276D0-39B5-4A2A-9F64-5CBB566BE56D}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,6 +61,10 @@ Global
 		{797276D0-39B5-4A2A-9F64-5CBB566BE56D}.Debug|Any CPU.Build.0 = Debug|x64
 		{797276D0-39B5-4A2A-9F64-5CBB566BE56D}.Release|Any CPU.ActiveCfg = Release|x64
 		{797276D0-39B5-4A2A-9F64-5CBB566BE56D}.Release|Any CPU.Build.0 = Release|x64
+		{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244}.Debug|Any CPU.Build.0 = Debug|x64
+		{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244}.Release|Any CPU.ActiveCfg = Release|x64
+		{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244}.Release|Any CPU.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -66,6 +75,7 @@ Global
 		{AC03452E-CC74-4639-9575-DCD2A17B7615} = {786FEED3-F270-49C1-B890-F017C79108E3}
 		{32CA57AD-9B0C-4CB5-BBA8-84FDF6EA5449} = {786FEED3-F270-49C1-B890-F017C79108E3}
 		{797276D0-39B5-4A2A-9F64-5CBB566BE56D} = {91B076D2-226E-4243-913D-23B1A804071B}
+		{4595F0E7-3B06-4DC0-AE6B-6400FBFDA244} = {91B076D2-226E-4243-913D-23B1A804071B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BD4AF009-F9A9-4513-8751-B32A30B6641A}
