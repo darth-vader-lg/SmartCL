@@ -1,0 +1,2 @@
+#define global __declspec(dllexport)
+#define global __declspec(dllimport)
