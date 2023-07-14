@@ -1,0 +1,41 @@
+﻿<Project InitialTargets="WriteProjectInfo" Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(SolutionDir)x64\$(Configuration)\CLKernels.dll" Link="CLKernels.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SmartCL\SmartCL.csproj" />
+  </ItemGroup>
+
+  <Target Name="WriteProjectInfo" BeforeTargets="Build">
+    <PropertyGroup>
+      <ProjectInfo>
+        <![CDATA[
+// Warning: this is an auto-generated file!
+// Any changes you do will be lost.
+namespace Common.Tests
+{
+    internal static class ProjectInfo
+    {
+      internal const string ProjectPath = @"$(ProjectDir)"%3b
+    }
+}
+       ]]>
+      </ProjectInfo>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(ProjectDir)ProjectInfo.cs" Lines="$(ProjectInfo)" Overwrite="true" Encoding="Unicode" />
+  </Target>
+
+</Project>

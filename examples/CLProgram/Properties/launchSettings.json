@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CLProgram": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

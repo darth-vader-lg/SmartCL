@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # Test
 /test/Common.Tests/ProjectInfo.cs
+
+# CLProgram example
+/examples/CLProgram/ProjectInfo.cs
