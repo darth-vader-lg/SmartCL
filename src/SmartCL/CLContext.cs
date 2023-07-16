@@ -119,6 +119,17 @@ namespace SmartCL
         /// <summary>
         /// Create a program
         /// </summary>
+        /// <param name="sources">The sources codes</param>
+        /// <returns>The program</returns>
+        public CLProgram CreateProgram(params CLSource[] sources)
+        {
+            Program?.Destroy();
+            Program = null!;
+            return Program = CLProgram.Build(this, sources);
+        }
+        /// <summary>
+        /// Create a program
+        /// </summary>
         /// <param name="sourceCode">The source code with kernels</param>
         /// <returns>The program</returns>
         public CLProgram CreateProgram(string[] sourceCode)
@@ -127,7 +138,7 @@ namespace SmartCL
                 throw new ArgumentNullException(nameof(sourceCode));
             Program?.Destroy();
             Program = null!;
-            return Program = CLProgram.Create(this, sourceCode);
+            return Program = CLProgram.Build(this, sourceCode);
         }
         /// <summary>
         /// See the OpenCL specification.

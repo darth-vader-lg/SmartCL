@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -18,9 +19,9 @@ namespace SmartCL
         /// </summary>
         public CLContext Context { get; private set; }
         /// <summary>
-        /// The source code
+        /// The source codes
         /// </summary>
-        public string[] SourceCode { get; private set; }
+        public CLSource[] Sources { get; private set; }
         #endregion
         #region Delegates
         /// <summary>
@@ -50,11 +51,11 @@ namespace SmartCL
         /// </summary>
         /// <param name="context">The context</param>
         /// <param name="id">The program identifier</param>
-        /// <param name="sourceCode">The source code of the program</param>
-        private CLProgram(CLContext context, nint id, string[] sourceCode) : base(id)
+        /// <param name="sources">The source codes of the program</param>
+        private CLProgram(CLContext context, nint id, CLSource[] sources) : base(id)
         {
             Context = context;
-            SourceCode = sourceCode;
+            Sources = sources;
         }
         /// <summary>
         /// See the OpenCL specification.
@@ -68,17 +69,17 @@ namespace SmartCL
             [In] ComputeProgramBuildNotifier pfn_notify,
             [In] IntPtr user_data);
         /// <summary>
-        /// Create program
+        /// Build a program
         /// </summary>
         /// <param name="context">Program context</param>
         /// <param name="sourceCode">Source code. null for invalid program</param>
         /// <returns>The program</returns>
-        internal static CLProgram Create(CLContext context, string[] sourceCode)
+        internal static CLProgram Build(CLContext context, string[] sourceCode)
         {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
             if (sourceCode == null)
-                return new(context, 0, sourceCode ?? Array.Empty<string>());
+                return new(context, 0, Array.Empty<CLSource>());
             var program = CreateProgramWithSource(context.ID, (uint)sourceCode.Length, sourceCode, null!, out var result);
             CL.Assert(result, "Cannot create the program");
             try {
@@ -93,24 +94,162 @@ namespace SmartCL
             }
             catch (CLException exc) {
                 var excMessage = new StringBuilder();
-                foreach (var device in context.Devices) {
-                    var log = IntPtr.Zero;
-                    try {
-                        GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, IntPtr.Zero, IntPtr.Zero, out var logsize);
-                        log = Marshal.AllocHGlobal(logsize);
-                        GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, logsize, log, out var _);
-                        var message = Marshal.PtrToStringAnsi(log);
-                        excMessage.AppendLine(message);
+                try {
+                    foreach (var device in context.Devices) {
+                        var log = IntPtr.Zero;
+                        try {
+                            GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, IntPtr.Zero, IntPtr.Zero, out var logsize);
+                            log = Marshal.AllocHGlobal(logsize);
+                            GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, logsize, log, out var _);
+                            var message = Marshal.PtrToStringAnsi(log);
+                            excMessage.AppendLine(message);
+                        }
+                        finally {
+                            if (log != IntPtr.Zero)
+                                Marshal.FreeHGlobal(log);
+                        }
                     }
-                    finally {
-                        if (log != IntPtr.Zero)
-                            Marshal.FreeHGlobal(log);
+                }
+                finally {
+                    try {
+                        ReleaseProgram(program);
+                    }
+                    catch (Exception) {
                     }
                 }
                 throw new CLException(exc.Error, excMessage.ToString());
             }
-            return new(context, program, sourceCode);
+            return new(context, program, new[] { new CLSource(null, sourceCode) });
         }
+        /// <summary>
+        /// Compile a program
+        /// </summary>
+        /// <param name="context">Program context</param>
+        /// <param name="sources">Set of sources codes</param>
+        /// <returns>The program</returns>
+        internal static CLProgram Build(CLContext context, IEnumerable<CLSource> sources)
+        {
+            // Check the context
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            // Check sources definition
+            if (sources == null)
+                return new(context, 0, Array.Empty<CLSource>());
+            // Create a dictionary of programs
+            var programs = new Dictionary<CLSource, nint>();
+            var nProgram = 0;
+            foreach (var s in sources) {
+                var lines = s.Code != null ? s.Code.Select(line => line ?? string.Empty).ToArray() : Array.Empty<string>();
+                var id = CreateProgramWithSource(context.ID, (uint)lines.Length, lines, null!, out var result);
+                CL.Assert(result, $"Cannot create the program {(string.IsNullOrEmpty(s.Path) ? $"n.{nProgram}" : s.Path)}");
+                programs[s] = id;
+                nProgram++;
+            }
+            // Compile and link the programs
+            var ids = programs.Keys.Select(k => programs[k]).ToArray();
+            var paths = programs.Keys.Select(k => string.IsNullOrWhiteSpace(k.Path) ? "" : k.Path!).ToArray();
+            try {
+                foreach (var s in programs.Keys) {
+                    try {
+                        CL.Assert(
+                            CompileProgram(
+                                programs[s],
+                                (uint)context.Devices.Count,
+                                context.Devices.Select(d => d.ID).ToArray(),
+                                null!,
+                                (uint)programs.Keys.Count,
+                                ids,
+                                paths,
+                                null!,
+                                IntPtr.Zero));
+                    }
+                    catch (CLException exc) {
+                        var excMessage = new StringBuilder();
+                        foreach (var device in context.Devices) {
+                            var log = IntPtr.Zero;
+                            try {
+                                GetProgramBuildInfo(programs[s], device.ID, CLProgramBuildInfo.BuildLog, IntPtr.Zero, IntPtr.Zero, out var logsize);
+                                log = Marshal.AllocHGlobal(logsize);
+                                GetProgramBuildInfo(programs[s], device.ID, CLProgramBuildInfo.BuildLog, logsize, log, out var _);
+                                var message = Marshal.PtrToStringAnsi(log);
+                                excMessage.AppendLine(message);
+                            }
+                            finally {
+                                if (log != IntPtr.Zero)
+                                    Marshal.FreeHGlobal(log);
+                            }
+                        }
+                        throw new CLException(exc.Error, excMessage.ToString());
+                    }
+                }
+                nint program = 0;
+                try {
+                    program = LinkProgram(
+                                context.ID,
+                                (uint)context.Devices.Count,
+                                context.Devices.Select(d => d.ID).ToArray(),
+                                null!,
+                                (uint)programs.Keys.Count,
+                                ids,
+                                null!,
+                                IntPtr.Zero,
+                                out var result);
+                    CL.Assert(result, "Linker error");
+                    return new(context, program, sources.ToArray());
+                }
+                catch (CLException exc) {
+                    try {
+                        var excMessage = new StringBuilder();
+                        foreach (var device in context.Devices) {
+                            var log = IntPtr.Zero;
+                            try {
+                                GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, IntPtr.Zero, IntPtr.Zero, out var logsize);
+                                log = Marshal.AllocHGlobal(logsize);
+                                GetProgramBuildInfo(program, device.ID, CLProgramBuildInfo.BuildLog, logsize, log, out var _);
+                                var message = Marshal.PtrToStringAnsi(log);
+                                excMessage.AppendLine(message);
+                            }
+                            finally {
+                                if (log != IntPtr.Zero)
+                                    Marshal.FreeHGlobal(log);
+                            }
+                        }
+                        throw new CLException(exc.Error, excMessage.ToString());
+                    }
+                    finally {
+                        try {
+                            ReleaseProgram(program);
+                        }
+                        catch (Exception) {
+                        }
+                    }
+                }
+
+            }
+            finally {
+                foreach (var id in ids) {
+                    try {
+                        ReleaseProgram(id);
+                    }
+                    catch (Exception) {
+                    }
+                }
+            }
+        }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clCompileProgram")]
+        private static extern CLError CompileProgram(
+            [In] nint program,
+            [In] uint num_devices,
+            [In] nint[] device_list,
+            [In, MarshalAs(UnmanagedType.LPStr)] string options,
+            [In] uint num_input_headers,
+            [In] nint[] input_headers,
+            [In, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPStr)] string[] header_include_names,
+            [In] ComputeProgramBuildNotifier pfn_notify,
+            [In] IntPtr user_data);
         /// <summary>
         /// See the OpenCL specification.
         /// </summary>
@@ -156,7 +295,7 @@ namespace SmartCL
         /// <returns>The text</returns>
         private string GetDebuggerDisplay()
         {
-            return string.Join(Environment.NewLine, SourceCode);
+            return string.Join(Environment.NewLine, Sources?.SelectMany(s => s.Code).SelectMany(s => s).Take(20));
         }
         /// <summary>
         /// Invalidate the object
@@ -175,8 +314,22 @@ namespace SmartCL
             catch (Exception) {
             }
             Context = null!;
-            SourceCode = null!;
+            Sources = null!;
         }
+        /// <summary>
+        /// See the OpenCL specification.
+        /// </summary>
+        [DllImport("OpenCL", EntryPoint = "clLinkProgram")]
+        private static extern nint LinkProgram(
+            [In] nint context,
+            [In] uint num_devices,
+            [In] nint[] device_list,
+            [In, MarshalAs(UnmanagedType.LPStr)] string options,
+            [In] uint num_input_programs,
+            [In] nint[] input_programs,
+            [In] ComputeProgramBuildNotifier pfn_notify,
+            [In] IntPtr user_data,
+            [Out] out CLError errcode_ret);
         /// <summary>
         /// See the OpenCL specification.
         /// </summary>

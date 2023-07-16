@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace SmartCL
@@ -527,12 +529,48 @@ namespace SmartCL
         /// <summary>
         /// Quick execute function
         /// </summary>
+        /// <param name="sources">Set of sources and headers files</param>
+        /// <param name="name">The kernel function name</param>
+        /// <param name="size">The work size (how many splits for the execution)</param>
+        /// <param name="args">Arguments to the kernel</param>
+        /// <exception cref="ArgumentException">Invalid data in arguments</exception>
+        public void Execute(IEnumerable<CLSource> sources, string name, int size, params object[] args)
+        {
+            var kArgs = GetCLArgs(args);
+            Context.CreateProgram((sources ?? Array.Empty<CLSource>()).ToArray());
+            using var kernel = new CLKernel<Action>(this, name, GetKernel(name), kArgs)
+            {
+                GlobalSizes = new[] { size }
+            };
+            kernel.Invoke();
+        }
+        /// <summary>
+        /// Quick execute function
+        /// </summary>
         /// <param name="sourceCode">Source code of the kernel</param>
         /// <param name="name">The kernel function name</param>
         /// <param name="size">The work size (how many splits for the execution)</param>
         /// <param name="args">Arguments to the kernel</param>
         /// <exception cref="ArgumentException">Invalid data in arguments</exception>
         public void Execute(string[] sourceCode, string name, int size, params object[] args)
+        {
+            var kArgs = GetCLArgs(args);
+            Context.CreateProgram(sourceCode);
+            using var kernel = new CLKernel<Action>(this, name, GetKernel(name), kArgs)
+            {
+                GlobalSizes = new[] { size }
+            };
+            kernel.Invoke();
+        }
+        /// <summary>
+        /// Quick execute function
+        /// </summary>
+        /// <param name="sources">Set of sources and headers files</param>
+        /// <param name="name">The kernel function name</param>
+        /// <param name="size">The work size (how many splits for the execution)</param>
+        /// <param name="args">Arguments to the kernel</param>
+        /// <exception cref="ArgumentException">Invalid data in arguments</exception>
+        private static ICLArg[] GetCLArgs(params object[] args)
         {
             var kArgs = new ICLArg[args.Length];
             for (var i = 0; i < kArgs.Length; i++) {
@@ -556,18 +594,7 @@ namespace SmartCL
                 }
                 throw new ArgumentException($"Unaccepted type {type} for argument {i}");
             }
-            Context.CreateProgram(sourceCode);
-            //var gt = typeof(Action).MakeGenericType(kArgs.Select(ka => ka.Type).ToArray());
-            //var kfType = Type.GetType(nameof(Action) + "<" + (args.Length > 0 ? new string(',', args.Length - 1) : "") + ">");
-            //var gfType = kfType.MakeGenericType(kArgs.Select(ka => ka.Type).ToArray());
-            //var gfType = typeof(Action);
-            //var kType = typeof(CLKernel<>).MakeGenericType(gfType);
-            //using var kernel = (CLKernel)Activator.CreateInstance(kType, this, name, GetKernel(name), kArgs);
-            using var kernel = new CLKernel<Action>(this, name, GetKernel(name), kArgs)
-            {
-                GlobalSizes = new[] { size }
-            };
-            kernel.Invoke();
+            return kArgs;
         }
         /// <summary>
         /// Initialize the program and return a kernel id
