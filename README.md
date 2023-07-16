@@ -50,7 +50,10 @@ SmartCL uses and encourages [Early Pull Requests](https://medium.com/practical-b
 
 <h1 align="center">Further resources</h1>
 
-- Several examples can be found in the [examples folder](https://github.com/darth-vader-lg/SmartCL/tree/master/examples)
+- Several examples can be found in the [examples folder](https://github.com/darth-vader-lg/SmartCL/tree/master/examples).
+- [ConsoleApp](https://github.com/darth-vader-lg/SmartCL/tree/master/examples/ConsoleApp): A console application showing how to create a program, kernels and use the buffers.
+- [CLKernels](https://github.com/darth-vader-lg/SmartCL/tree/master/examples/CLKernels): A cpp project running both as DLL and as program on th GPU device.
+- [CLProgram](https://github.com/darth-vader-lg/SmartCL/tree/master/examples/CLProgram): A console application to call CLKernel library from standard application and to build and call it on the GPU.
 
 <h1 align="center">Licensing and governance</h1>
 
