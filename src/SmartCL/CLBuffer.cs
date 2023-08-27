@@ -240,8 +240,10 @@ namespace SmartCL
                 memFlags |= CLMemFlags.AllocHostPtr;
                 hostArrayHandle = default;
             }
-            else
+            else {
+                memFlags |= CLMemFlags.UseHostPtr;
                 hostArrayHandle = GCHandle.Alloc(hostArray, GCHandleType.Pinned);
+            }
             var id = CreateBuffer(
                 context.ID,
                 memFlags,
