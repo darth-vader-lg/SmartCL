@@ -10,6 +10,4 @@
 #define global
 #define local
 
-#pragma warning (disable : 4326) // For void main
-
 #endif // _WINDOWS

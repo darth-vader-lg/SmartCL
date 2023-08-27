@@ -8,10 +8,10 @@ if (CL.DefaultDevice is var device && device is null)
     throw new Exception("Cannot find a default device");
 
 // ====== Simulation ======
-// Call the main function of the simulation library
+// Call the main clfunction of the simulation library
 var data = new int[] { 123 };
-Console.WriteLine("Calling main from DLL...");
-main(data);
+Console.WriteLine("Calling clmain from DLL...");
+clmain(data);
 
 // ====== OpenCL device ======
 // Read source files from the DLL project 
@@ -21,14 +21,14 @@ var sources = sourcesFiles.Select(file => new CLSource(Path.GetRelativePath(path
 // Create the program, in the device, with all sources
 device.Context.CreateProgram(sources.ToArray());
 var kdata = new int[] { 456 };
-using (var kernel = device.CreateKernel("main", kdata.AsCLArg())) {
-    Console.WriteLine("Calling main from SmartCL...");
+using (var kernel = device.CreateKernel("clmain", kdata.AsCLArg())) {
+    Console.WriteLine("Calling clmain from SmartCL...");
     kernel.Invoke();
 }
 
 // Imports from simulation DLL
 static class CLKernels
 {
-    [DllImport("CLKernels", EntryPoint = "main")]
-    public extern static void main(int[] data);
+    [DllImport("CLKernels", EntryPoint = "clmain")]
+    public extern static void clmain(int[] data);
 }

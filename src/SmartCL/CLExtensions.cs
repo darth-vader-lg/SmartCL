@@ -18,13 +18,13 @@ namespace SmartCL
         /// <param name="sourceCode">The source code to be run on the device</param>
         /// <param name="args">Arguments</param>
         /// <remarks>
-        /// The kernel function must be called with reserved name "main".
+        /// The kernel function must be called with reserved name "clmain".
         /// The first argument passed to the kernel will be always the array.
         /// The the args list will start from the second parameter passed to the kernel
         /// </remarks>
         public static void ExecuteOnDevice<T>(this T[] array, CLDeviceContext deviceContext, string[] sourceCode, params object[] args) where T : struct
         {
-            deviceContext.Execute(sourceCode, "main", array.Length, new[] { array }.Concat(args).ToArray());
+            deviceContext.Execute(sourceCode, "clmain", array.Length, new[] { array }.Concat(args).ToArray());
         }
         /// <summary>
         /// Execute a source code, in a device, for the specified array of elements
@@ -41,7 +41,7 @@ namespace SmartCL
         /// </remarks>
         public static void ExecuteOnDevice<T>(this T[] array, CLDeviceContext deviceContext, IEnumerable<CLSource> sources, params object[] args) where T : struct
         {
-            deviceContext.Execute(sources, "main", array.Length, new[] { array }.Concat(args).ToArray());
+            deviceContext.Execute(sources, "clmain", array.Length, new[] { array }.Concat(args).ToArray());
         }
         #endregion
     }

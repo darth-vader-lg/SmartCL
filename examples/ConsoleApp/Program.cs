@@ -21,7 +21,7 @@ if (CL.DefaultDevice is var device && device is null)
 // Quick operation on an array
 a.ExecuteOnDevice(device, new[]
 {
-    "__kernel void main(__global int* A, const int c) {",
+    "__kernel void clmain(__global int* A, const int c) {",
     "   A[get_global_id(0)] = c * A[get_global_id(0)];",
     "}"
 }, 2);
